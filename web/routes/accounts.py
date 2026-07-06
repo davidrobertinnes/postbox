@@ -1,0 +1,145 @@
+"""
+Email account CRUD + IMAP connection testing.
+"""
+from flask import Blueprint, request
+from web.shared import db, ok, err, dict_rows
+from core.database import get_connection
+from core.credentials import store_password, delete_password
+from core.imap_sync import test_connection, sync_folders, start_sync
+
+bp = Blueprint("accounts", __name__)
+
+
+@bp.route("/api/accounts")
+def api_accounts():
+    conn = get_connection(db())
+    rows = dict_rows(conn.execute(
+        "SELECT id, name, email, provider, imap_host, imap_port, imap_ssl, "
+        "smtp_host, smtp_port, smtp_ssl, username, auth_type, last_sync, active "
+        "FROM accounts ORDER BY id"
+    ).fetchall())
+    # Attach folder counts
+    for row in rows:
+        folder_row = conn.execute(
+            "SELECT SUM(unread_count) as unread, SUM(message_count) as total "
+            "FROM folders WHERE account_id=?",
+            (row["id"],)
+        ).fetchone()
+        row["unread_count"] = folder_row["unread"] or 0
+        row["message_count"] = folder_row["total"] or 0
+    conn.close()
+    return ok(rows)
+
+
+@bp.route("/api/accounts", methods=["POST"])
+def api_accounts_create():
+    data = request.get_json() or {}
+    password = data.pop("password", None)
+
+    required = ["name", "email", "imap_host", "smtp_host", "username"]
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return err(f"Required: {', '.join(missing)}")
+
+    conn = get_connection(db())
+    try:
+        # Test connection first if password supplied
+        if password:
+            ok_conn, msg = test_connection(data, password)
+            if not ok_conn:
+                conn.close()
+                return err(f"IMAP connection failed: {msg}")
+
+        cur = conn.execute("""
+            INSERT INTO accounts (name, email, provider, imap_host, imap_port, imap_ssl,
+                smtp_host, smtp_port, smtp_ssl, username, auth_type)
+            VALUES (:name, :email, :provider, :imap_host, :imap_port, :imap_ssl,
+                :smtp_host, :smtp_port, :smtp_ssl, :username, :auth_type)
+        """, {
+            "name": data["name"],
+            "email": data["email"],
+            "provider": data.get("provider", "imap"),
+            "imap_host": data["imap_host"],
+            "imap_port": int(data.get("imap_port", 993)),
+            "imap_ssl": int(data.get("imap_ssl", 1)),
+            "smtp_host": data["smtp_host"],
+            "smtp_port": int(data.get("smtp_port", 587)),
+            "smtp_ssl": int(data.get("smtp_ssl", 0)),
+            "username": data["username"],
+            "auth_type": data.get("auth_type", "password"),
+        })
+        account_id = cur.lastrowid
+        conn.commit()
+
+        if password:
+            store_password(account_id, password)
+
+        # Kick off initial sync (non-blocking)
+        import threading
+        threading.Thread(
+            target=_initial_sync,
+            args=(account_id, db()),
+            daemon=True,
+        ).start()
+
+    except Exception as e:
+        conn.close()
+        return err(str(e))
+
+    conn.close()
+    return ok({"id": account_id})
+
+
+def _initial_sync(account_id: int, db_path: str):
+    sync_folders(account_id, db_path)
+    start_sync(account_id, db_path)
+
+
+@bp.route("/api/accounts/<int:aid>", methods=["PUT"])
+def api_account_update(aid: int):
+    data = request.get_json() or {}
+    password = data.pop("password", None)
+    conn = get_connection(db())
+    row = conn.execute("SELECT id FROM accounts WHERE id=?", (aid,)).fetchone()
+    if not row:
+        conn.close()
+        return err("Not found", 404)
+
+    fields = ["name", "email", "provider", "imap_host", "imap_port", "imap_ssl",
+              "smtp_host", "smtp_port", "smtp_ssl", "username"]
+    updates = {k: data[k] for k in fields if k in data}
+    if updates:
+        set_clause = ", ".join(f"{k}=:{k}" for k in updates)
+        updates["id"] = aid
+        conn.execute(f"UPDATE accounts SET {set_clause} WHERE id=:id", updates)
+        conn.commit()
+
+    if password:
+        store_password(aid, password)
+
+    conn.close()
+    return ok()
+
+
+@bp.route("/api/accounts/<int:aid>", methods=["DELETE"])
+def api_account_delete(aid: int):
+    from core.imap_sync import stop_sync
+    stop_sync(aid)
+    conn = get_connection(db())
+    delete_password(aid)
+    conn.execute("DELETE FROM accounts WHERE id=?", (aid,))
+    conn.commit()
+    conn.close()
+    return ok()
+
+
+@bp.route("/api/accounts/test", methods=["POST"])
+def api_accounts_test():
+    data = request.get_json() or {}
+    password = data.get("password")
+    if not password:
+        return err("Password required")
+    success, msg = test_connection(data, password)
+    if success:
+        return ok({"message": msg})
+    return err(msg)

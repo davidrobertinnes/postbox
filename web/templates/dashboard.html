@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Postbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/postbox.css">
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-wordmark">post<span>box</span></div>
+      <div class="brand-sub">AI Email Client</div>
+    </div>
+
+    <div class="nav-scroll">
+      <div class="nav-section-label">Mail</div>
+      <div class="nav-item active" data-module="inbox" onclick="navigate('inbox')">
+        <span class="nav-icon">📥</span>Inbox
+        <span class="nav-badge" id="nb-inbox" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-module="sent" onclick="navigate('sent')">
+        <span class="nav-icon">📤</span>Sent
+      </div>
+      <div class="nav-item" data-module="drafts" onclick="navigate('drafts')">
+        <span class="nav-icon">📝</span>Drafts
+      </div>
+      <div class="nav-item" data-module="trash" onclick="navigate('trash')">
+        <span class="nav-icon">🗑</span>Trash
+      </div>
+      <div class="nav-item" data-module="all" onclick="navigate('all')">
+        <span class="nav-icon">📧</span>All Mail
+      </div>
+
+      <div class="nav-divider"></div>
+      <div class="nav-section-label">Manage</div>
+      <div class="nav-item" data-module="accounts" onclick="navigate('accounts')">
+        <span class="nav-icon">⚙</span>Accounts
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="footer-icon" title="Compose new email" onclick="composeNew()">✏</div>
+      <div style="flex:1"></div>
+      <span id="sync-indicator" style="font-size:11px;color:var(--ink3);font-family:var(--font-mono)"></span>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <div class="page-header">
+      <div class="page-title" id="page-title">Inbox</div>
+      <div class="page-meta">
+        <button class="btn btn-primary btn-sm" onclick="composeNew()">✏ Compose</button>
+        <div class="footer-icon" title="Refresh" onclick="_refreshPage()">↻</div>
+      </div>
+    </div>
+
+    <div class="content" id="module-content">
+      <div class="state-loading">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Detail slide-over ── -->
+<div class="det-overlay" id="det-overlay" onclick="detClose()"></div>
+<div class="det-panel" id="det-panel">
+  <div class="det-hdr">
+    <button class="det-close" onclick="detClose()">✕</button>
+    <div class="det-title" id="det-title"></div>
+  </div>
+  <div class="det-body" id="det-body"></div>
+  <div class="det-foot" id="det-foot"></div>
+</div>
+
+<!-- ── Toast container ── -->
+<div id="toast-container"></div>
+
+<script src="/static/js/emails.js"></script>
+<script src="/static/js/accounts.js"></script>
+<script src="/static/js/compose.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// SHELL — navigation, apiFetch, toast, helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _currentModule = '';
+
+async function apiFetch(path) {
+  const res = await fetch(path, { credentials: 'include' });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'API error');
+  return j.data;
+}
+
+function toast(msg, type) {
+  const tc = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast' + (type === 'err' ? ' toast-err' : '');
+  el.textContent = msg;
+  tc.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const today = now.toDateString();
+    const yesterday = new Date(now - 86400000).toDateString();
+    if (d.toDateString() === today) return d.toLocaleTimeString('en-AU', {hour:'2-digit',minute:'2-digit'});
+    if (d.toDateString() === yesterday) return 'Yesterday';
+    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString('en-AU', {day:'numeric',month:'short'});
+    return d.toLocaleDateString('en-AU', {day:'numeric',month:'short',year:'numeric'});
+  } catch(e) { return iso; }
+}
+
+function navigate(key) {
+  _currentModule = key;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.module === key);
+  });
+  const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',all:'All Mail',accounts:'Accounts'};
+  document.getElementById('page-title').textContent = titles[key] || key;
+  detClose();
+  if (key === 'accounts') { pageAccounts(); return; }
+  pageEmails(key);
+}
+
+function detClose() {
+  document.getElementById('det-overlay').classList.remove('open');
+  document.getElementById('det-panel').classList.remove('open');
+  document.getElementById('det-body').innerHTML = '';
+  document.getElementById('det-foot').innerHTML = '';
+}
+
+function detOpen(title) {
+  document.getElementById('det-title').textContent = title;
+  document.getElementById('det-body').innerHTML = '<div class="state-loading">Loading…</div>';
+  document.getElementById('det-foot').innerHTML = '';
+  document.getElementById('det-overlay').classList.add('open');
+  document.getElementById('det-panel').classList.add('open');
+}
+
+function _refreshPage() { navigate(_currentModule || 'inbox'); }
+
+// Update unread badge
+async function _refreshBadge() {
+  try {
+    const d = await apiFetch('/api/emails/unread_count');
+    const el = document.getElementById('nb-inbox');
+    if (d.unread > 0) { el.textContent = d.unread; el.style.display = ''; }
+    else { el.style.display = 'none'; }
+  } catch(e) {}
+}
+
+// Init
+navigate('inbox');
+setInterval(_refreshBadge, 30000);
+_refreshBadge();
+</script>
+</body>
+</html>

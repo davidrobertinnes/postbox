@@ -1,0 +1,49 @@
+"""
+Postbox — AI Email Client
+Flask application entry point.
+"""
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from flask import Flask, render_template, redirect
+
+app = Flask(
+    __name__,
+    static_folder=os.path.join(os.path.dirname(__file__), "static"),
+    static_url_path="/static",
+    template_folder=os.path.join(os.path.dirname(__file__), "templates"),
+)
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SEND_FILE_MAX_AGE_DEFAULT=0,
+)
+app.secret_key = b"postbox-local-only"
+
+DB_PATH = None
+
+
+# ── Blueprints ──────────────────────────────────────────────────────────────────
+from web.routes.accounts import bp as accounts_bp
+from web.routes.emails   import bp as emails_bp
+from web.routes.compose  import bp as compose_bp
+from web.routes.ai       import bp as ai_bp
+
+app.register_blueprint(accounts_bp)
+app.register_blueprint(emails_bp)
+app.register_blueprint(compose_bp)
+app.register_blueprint(ai_bp)
+
+
+# ── Shell route ─────────────────────────────────────────────────────────────────
+@app.route("/")
+def index():
+    return render_template("dashboard.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return redirect("/static/favicon.svg")

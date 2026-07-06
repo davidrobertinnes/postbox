@@ -260,6 +260,8 @@ html, body {
 .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
 .btn-danger { background: var(--red); color: #fff; }
 .btn-danger:hover { opacity: 0.88; }
+.btn-outline.btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
+.btn-outline.btn-danger:hover { background: var(--red-dim); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
 /* ══════════════════════════════════════════════════════════════════════

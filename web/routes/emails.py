@@ -138,14 +138,55 @@ def api_email(mid: int):
     ).fetchall())
     msg["attachments"] = attachments
 
-    # Mark as read (remove \Seen flag logic handled client-side; here just update DB)
-    conn.execute(
-        "UPDATE messages SET flags=json_set(flags, '$[#]', '\\\\Seen') WHERE id=? AND flags NOT LIKE '%Seen%'",
-        (mid,)
-    )
-    conn.commit()
+    # Update local read flag (IMAP server write-back triggered separately by client)
+    if "Seen" not in (msg.get("flags") or ""):
+        import json as _json
+        flags = _json.loads(msg.get("flags") or "[]")
+        if "\\Seen" not in flags:
+            flags.append("\\Seen")
+            conn.execute("UPDATE messages SET flags=? WHERE id=?", (_json.dumps(flags), mid))
+            conn.execute(
+                "UPDATE folders SET unread_count=MAX(0,unread_count-1) WHERE id=?",
+                (msg["folder_id"],)
+            )
+            conn.commit()
+
     conn.close()
     return ok(msg)
+
+
+@bp.route("/api/emails/<int:mid>/mark_read", methods=["POST"])
+def api_mark_read(mid: int):
+    from core.imap_actions import mark_read
+    mark_read(mid, db())
+    return ok()
+
+
+@bp.route("/api/emails/<int:mid>/mark_unread", methods=["POST"])
+def api_mark_unread(mid: int):
+    from core.imap_actions import mark_unread
+    mark_unread(mid, db())
+    return ok()
+
+
+@bp.route("/api/emails/<int:mid>/trash", methods=["POST"])
+def api_trash(mid: int):
+    from core.imap_actions import trash_message
+    if trash_message(mid, db()):
+        return ok()
+    return err("Could not trash message")
+
+
+@bp.route("/api/emails/<int:mid>/move", methods=["POST"])
+def api_move(mid: int):
+    from core.imap_actions import move_message
+    data = request.get_json() or {}
+    folder_id = data.get("folder_id")
+    if not folder_id:
+        return err("folder_id required")
+    if move_message(mid, int(folder_id), db()):
+        return ok()
+    return err("Could not move message")
 
 
 @bp.route("/api/threads/<thread_id>")
@@ -163,15 +204,6 @@ def api_thread(thread_id: str):
     """, (thread_id,)).fetchall())
     conn.close()
     return ok(rows)
-
-
-@bp.route("/api/emails/<int:mid>/mark_read", methods=["POST"])
-def api_mark_read(mid: int):
-    conn = get_connection(db())
-    conn.execute("UPDATE messages SET flags='[\"\\\\\\\\Seen\"]' WHERE id=?", (mid,))
-    conn.commit()
-    conn.close()
-    return ok()
 
 
 @bp.route("/api/folders")

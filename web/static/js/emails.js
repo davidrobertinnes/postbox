@@ -169,7 +169,7 @@ function _emRow(msg) {
   const isUnread = !(msg.flags || '').includes('Seen');
   const displayFrom = msg.from_name || msg.from_addr || '(unknown)';
 
-  return `<tr class="em-row${isUnread ? ' unread' : ''}" onclick="emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
+  return `<tr class="em-row${isUnread ? ' unread' : ''}" data-msgid="${msg.id}" onclick="emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
     <td><span class="em-acct-dot" style="background:${colour}" title="${esc(msg.account_name||'')}"></span></td>
     <td class="em-from">${esc(displayFrom)}</td>
     <td class="em-subject">${esc(msg.subject || '(no subject)')}</td>
@@ -186,6 +186,11 @@ async function emOpen(msgId, threadId) {
     document.getElementById('det-title').textContent = msg.subject || '(no subject)';
     _emRenderDetail(msg, threadId);
     if (threadId) _emLoadSummary(threadId);
+    // Write \Seen back to IMAP server (fire and forget)
+    fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
+    // Update row styling immediately
+    const row = document.querySelector(`tr[data-msgid="${msgId}"]`);
+    if (row) row.classList.remove('unread');
   } catch(e) {
     document.getElementById('det-body').innerHTML = `<div class="state-error">${esc(e.message)}</div>`;
   }
@@ -239,6 +244,41 @@ function _emRenderDetail(msg, threadId) {
   fwdBtn.textContent = 'Forward';
   fwdBtn.onclick = () => composeForward(msg);
   foot.appendChild(fwdBtn);
+
+  const unreadBtn = document.createElement('button');
+  unreadBtn.className = 'btn btn-outline btn-sm';
+  unreadBtn.textContent = 'Mark Unread';
+  unreadBtn.onclick = () => _emMarkUnread(msg.id);
+  foot.appendChild(unreadBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn btn-outline btn-sm btn-danger';
+  delBtn.textContent = 'Delete';
+  delBtn.onclick = () => _emTrash(msg.id, delBtn);
+  foot.appendChild(delBtn);
+}
+
+async function _emMarkUnread(msgId) {
+  try {
+    await fetch(`/api/emails/${msgId}/mark_unread`, { method: 'POST' });
+    const row = document.querySelector(`tr[data-msgid="${msgId}"]`);
+    if (row) row.classList.add('unread');
+    detClose();
+    toast('Marked as unread');
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+}
+
+async function _emTrash(msgId, btn) {
+  if (btn) { btn.textContent = 'Deleting...'; btn.disabled = true; }
+  try {
+    const r = await fetch(`/api/emails/${msgId}/trash`, { method: 'POST' }).then(r => r.json());
+    if (!r.ok) { toast(r.error || 'Delete failed', 'err'); if (btn) { btn.textContent = 'Delete'; btn.disabled = false; } return; }
+    detClose();
+    _emMessages = _emMessages.filter(m => m.id !== msgId);
+    _emTotal = Math.max(0, _emTotal - 1);
+    _emRender(true);
+    toast('Moved to Trash');
+  } catch(e) { toast('Delete failed: ' + e.message, 'err'); if (btn) { btn.textContent = 'Delete'; btn.disabled = false; } }
 }
 
 async function _emLoadSummary(threadId) {

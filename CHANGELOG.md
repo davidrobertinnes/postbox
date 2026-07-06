@@ -15,3 +15,7 @@
 - web/static/js/emails.js: Added `_emOffset` pagination state; reset on folder/search change; `_emLoad(append)` supports appending to existing list
 - web/static/js/emails.js: Added "Load more" button (fetches next 200, appends) and "Load all" button (fetches all remaining in one request) shown when list is truncated
 - web/routes/emails.py: Raised server-side message limit cap from 500 to 9999 to support Load All
+- web/routes/accounts.py: Added `POST /api/sync` endpoint — triggers immediate `sync_all_folders_messages` for all active accounts in a background thread; fixed app-context bug (db() resolved on request thread, path passed to background thread)
+- web/routes/accounts.py: `_initial_sync` now runs a full all-folder sync before starting the background loop, so new accounts populate all folders immediately
+- web/templates/dashboard.html: Refresh button (↻) now calls `_syncAndRefresh()` — triggers `/api/sync`, reloads folder list, then refreshes current view; icon spins during sync
+- web/static/postbox.css: Added `@keyframes spin` for refresh button animation

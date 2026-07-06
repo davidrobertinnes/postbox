@@ -5,7 +5,7 @@ from flask import Blueprint, request
 from web.shared import db, ok, err, dict_rows
 from core.database import get_connection
 from core.credentials import store_password, delete_password
-from core.imap_sync import test_connection, sync_folders, start_sync
+from core.imap_sync import test_connection, sync_folders, sync_all_folders_messages, start_sync
 
 bp = Blueprint("accounts", __name__)
 
@@ -92,7 +92,31 @@ def api_accounts_create():
 
 def _initial_sync(account_id: int, db_path: str):
     sync_folders(account_id, db_path)
+    sync_all_folders_messages(account_id, db_path)
     start_sync(account_id, db_path)
+
+
+@bp.route("/api/sync", methods=["POST"])
+def api_sync():
+    """Trigger an immediate full sync of all folders for all accounts."""
+    import threading
+    data = request.get_json() or {}
+    account_id = data.get("account_id")
+    conn = get_connection(db())
+    if account_id:
+        rows = conn.execute("SELECT id FROM accounts WHERE id=? AND active=1", (account_id,)).fetchall()
+    else:
+        rows = conn.execute("SELECT id FROM accounts WHERE active=1").fetchall()
+    conn.close()
+
+    db_path = db()
+
+    def _run():
+        for row in rows:
+            sync_all_folders_messages(row["id"], db_path)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return ok({"syncing": len(rows)})
 
 
 @bp.route("/api/accounts/<int:aid>", methods=["PUT"])

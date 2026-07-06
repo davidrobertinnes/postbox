@@ -40,7 +40,7 @@
       <div class="page-title" id="page-title">Inbox</div>
       <div class="page-meta">
         <button class="btn btn-primary btn-sm" onclick="composeNew()">&#9998; Compose</button>
-        <div class="footer-icon" title="Refresh" onclick="_refreshPage()">&#8635;</div>
+        <div class="footer-icon" title="Sync &amp; Refresh" onclick="_syncAndRefresh(this)">&#8635;</div>
         <div class="footer-icon footer-icon-close" title="Close Postbox" onclick="_closePostbox()">&#9211;</div>
       </div>
     </div>
@@ -262,6 +262,20 @@ function _refreshPage() {
   } else {
     navigate(key);
   }
+}
+
+async function _syncAndRefresh(btn) {
+  const orig = btn.textContent;
+  btn.style.animation = 'spin 1s linear infinite';
+  btn.style.display = 'inline-block';
+  try {
+    await fetch('/api/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    await _loadFolders();
+    _refreshPage();
+    _refreshBadge();
+  } catch(e) {}
+  btn.style.animation = '';
+  btn.textContent = orig;
 }
 
 async function _closePostbox() {

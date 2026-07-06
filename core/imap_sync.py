@@ -8,6 +8,7 @@ import threading
 import time
 import json
 import logging
+import email.header as _email_header
 
 from core.database import get_connection
 from core.credentials import get_password
@@ -84,6 +85,10 @@ def sync_folders(account_id: int, db_path: str) -> None:
         client = _make_client(account, password)
         folders = client.list_folders()
         for flags, delimiter, name in folders:
+            if isinstance(name, bytes):
+                name = name.decode("utf-8", errors="replace")
+            if isinstance(delimiter, bytes):
+                delimiter = delimiter.decode("utf-8", errors="replace")
             role = _guess_role(name)
             display = name.split(delimiter or "/")[-1] if delimiter else name
             conn.execute("""
@@ -182,9 +187,12 @@ def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict)
         return
 
     flags = data.get(b"FLAGS", ())
-    flags_json = json.dumps([str(f) for f in flags])
+    flags_json = json.dumps([
+        f.decode("utf-8", errors="replace") if isinstance(f, bytes) else str(f)
+        for f in flags
+    ])
 
-    subject = _decode_imap_str(env.subject) or "(no subject)"
+    subject = _decode_mime(_decode_imap_str(env.subject)) or "(no subject)"
     from_addr, from_name = _parse_imap_addr(env.from_)
     to_addrs = json.dumps([{"addr": a, "name": n} for a, n in _parse_imap_addr_list(env.to)])
     cc_addrs = json.dumps([{"addr": a, "name": n} for a, n in _parse_imap_addr_list(env.cc)])
@@ -212,6 +220,23 @@ def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict)
     ))
 
 
+def _decode_mime(val: str | None) -> str | None:
+    """Decode RFC 2047 encoded words in a header string."""
+    if not val:
+        return val
+    try:
+        parts = _email_header.decode_header(val)
+        decoded = []
+        for part, charset in parts:
+            if isinstance(part, bytes):
+                decoded.append(part.decode(charset or "utf-8", errors="replace"))
+            else:
+                decoded.append(part)
+        return "".join(decoded)
+    except Exception:
+        return val
+
+
 def _decode_imap_str(val) -> str | None:
     if val is None:
         return None
@@ -227,7 +252,7 @@ def _parse_imap_addr(addr_list) -> tuple[str, str]:
     a = addr_list[0]
     mailbox = _decode_imap_str(a.mailbox) or ""
     host = _decode_imap_str(a.host) or ""
-    name = _decode_imap_str(a.name) or ""
+    name = _decode_mime(_decode_imap_str(a.name)) or ""
     addr = f"{mailbox}@{host}".lower() if host else mailbox
     return (addr, name)
 
@@ -239,7 +264,7 @@ def _parse_imap_addr_list(addr_list) -> list[tuple[str, str]]:
     for a in addr_list:
         mailbox = _decode_imap_str(a.mailbox) or ""
         host = _decode_imap_str(a.host) or ""
-        name = _decode_imap_str(a.name) or ""
+        name = _decode_mime(_decode_imap_str(a.name)) or ""
         addr = f"{mailbox}@{host}".lower() if host else mailbox
         if addr:
             result.append((addr, name))

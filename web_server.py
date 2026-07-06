@@ -165,8 +165,8 @@ if __name__ == "__main__":
 
     initialise_database(db_path)
 
-    print(f"\n  Postbox — AI Email Client")
-    print(f"  {'─' * 35}")
+    print(f"\n  Postbox - AI Email Client")
+    print(f"  {'-' * 35}")
     print(f"  Database : {db_path}")
     print(f"  Open     : {url}\n")
 

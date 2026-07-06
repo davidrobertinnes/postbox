@@ -1,0 +1,20 @@
+# Chrome profile (Chromium app-mode data — local only)
+.postbox-chrome-profile/
+
+# Database
+postbox.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / credentials fallback file
+.postbox_creds.json

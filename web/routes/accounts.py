@@ -119,6 +119,31 @@ def api_sync():
     return ok({"syncing": len(rows)})
 
 
+@bp.route("/api/settings/ai_key", methods=["GET"])
+def api_ai_key_get():
+    from core.credentials import get_api_key
+    key = get_api_key()
+    # Return masked key so UI can show whether one is set
+    if key and len(key) > 8:
+        masked = key[:4] + "•" * (len(key) - 8) + key[-4:]
+    elif key:
+        masked = "•" * len(key)
+    else:
+        masked = ""
+    return ok({"set": bool(key), "masked": masked})
+
+
+@bp.route("/api/settings/ai_key", methods=["POST"])
+def api_ai_key_set():
+    from core.credentials import store_api_key
+    data = request.get_json() or {}
+    key = (data.get("key") or "").strip()
+    if not key:
+        return err("key required")
+    store_api_key(key)
+    return ok()
+
+
 @bp.route("/api/accounts/<int:aid>", methods=["PUT"])
 def api_account_update(aid: int):
     data = request.get_json() or {}

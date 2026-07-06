@@ -70,7 +70,23 @@ function _acctRender() {
 
   mc.innerHTML = `
     <div class="acct-list-panel">${rows}</div>
-    <button class="btn btn-primary" onclick="_acctAddWizard()">+ Add Account</button>`;
+    <button class="btn btn-primary" onclick="_acctAddWizard()">+ Add Account</button>
+    <div class="ai-settings-card" id="ai-settings-card" style="margin-top:28px">
+      <div class="ai-settings-title">&#10022; AI Settings</div>
+      <div class="ai-settings-body">
+        <p style="font-size:13px;color:var(--ink2);margin-bottom:14px">
+          Dogbox Mailman uses Claude (Anthropic) for email summarisation, triage, and draft assistance.
+          Provide your API key to enable these features.
+        </p>
+        <label class="form-label">Anthropic API Key</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="password" id="ai-key-input" class="form-control" placeholder="sk-ant-..." style="flex:1;font-family:monospace">
+          <button class="btn btn-primary btn-sm" onclick="_acctSaveAIKey()">Save</button>
+        </div>
+        <div id="ai-key-status" style="margin-top:8px;font-size:12px;color:var(--ink3)">Loading…</div>
+      </div>
+    </div>`;
+  _acctLoadAIKeyStatus();
 }
 
 function _acctAddWizard() {
@@ -304,4 +320,37 @@ function _acctEdit(id) {
     else { toast(j.error || 'Delete failed', 'err'); }
   };
   foot.appendChild(delBtn);
+}
+
+async function _acctLoadAIKeyStatus() {
+  const el = document.getElementById('ai-key-status');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/settings/ai_key');
+    if (r.set) {
+      el.innerHTML = `<span style="color:var(--green)">&#10003; API key saved (${esc(r.masked)})</span>`;
+    } else {
+      el.textContent = 'No API key saved.';
+    }
+  } catch(e) {
+    el.textContent = '';
+  }
+}
+
+async function _acctSaveAIKey() {
+  const input = document.getElementById('ai-key-input');
+  const key = (input?.value || '').trim();
+  if (!key) { toast('Enter an API key', 'err'); return; }
+  const r = await fetch('/api/settings/ai_key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  }).then(r => r.json());
+  if (r.ok) {
+    toast('API key saved');
+    input.value = '';
+    _acctLoadAIKeyStatus();
+  } else {
+    toast(r.error || 'Save failed', 'err');
+  }
 }

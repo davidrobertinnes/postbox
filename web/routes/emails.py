@@ -27,6 +27,7 @@ def api_emails():
     account_id = request.args.get("account", type=int)
     q = request.args.get("q", "").strip()
     unread_only = request.args.get("unread") == "1"
+    priority = request.args.get("priority", type=int)
     limit = min(int(request.args.get("limit", 100)), 9999)
     offset = int(request.args.get("offset", 0))
 
@@ -46,6 +47,10 @@ def api_emails():
 
     if unread_only:
         where.append("m.flags NOT LIKE '%Seen%'")
+
+    if priority:
+        where.append("m.ai_priority=?")
+        params.append(priority)
 
     if q:
         where.append("(m.subject LIKE ? OR m.from_addr LIKE ? OR m.from_name LIKE ? OR m.snippet LIKE ?)")

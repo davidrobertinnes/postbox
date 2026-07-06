@@ -5,7 +5,7 @@ import json
 from flask import Blueprint, request
 from web.shared import db, ok, err, dict_rows
 from core.database import get_connection
-from core.ai_client import summarise_thread, draft_reply, extract_actions
+from core.ai_client import summarise_thread, draft_reply, extract_actions, triage_messages
 
 bp = Blueprint("ai_routes", __name__)
 
@@ -134,3 +134,41 @@ def api_actions():
     conn.close()
 
     return ok({"actions": actions, "cached": False})
+
+
+@bp.route("/api/ai/triage", methods=["POST"])
+def api_triage():
+    """Batch-triage unscored unread inbox messages. Updates ai_priority + ai_category."""
+    data = request.get_json() or {}
+    limit = min(int(data.get("limit", 50)), 100)
+
+    conn = get_connection(db())
+    messages = dict_rows(conn.execute("""
+        SELECT m.id, m.from_addr, m.subject, m.snippet
+        FROM messages m
+        JOIN folders f ON f.id = m.folder_id
+        WHERE f.role = 'inbox'
+          AND m.ai_priority IS NULL
+          AND m.flags NOT LIKE '%Seen%'
+        ORDER BY m.date DESC
+        LIMIT ?
+    """, (limit,)).fetchall())
+    conn.close()
+
+    if not messages:
+        return ok({"triaged": 0, "results": []})
+
+    results = triage_messages(messages)
+    if not results:
+        return ok({"triaged": 0, "results": []})
+
+    conn = get_connection(db())
+    for r in results:
+        conn.execute(
+            "UPDATE messages SET ai_priority=?, ai_category=? WHERE id=?",
+            (r["priority"], r["category"], r["id"])
+        )
+    conn.commit()
+    conn.close()
+
+    return ok({"triaged": len(results), "results": results})

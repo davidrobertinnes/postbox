@@ -6,18 +6,23 @@ import json
 
 try:
     import anthropic as _anthropic
-    _CLIENT = _anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    _ANTHROPIC_OK = True
 except ImportError:
-    _CLIENT = None
+    _anthropic = None
+    _ANTHROPIC_OK = False
 
-_HAIKU = "claude-haiku-4-5-20251001"
+_HAIKU  = "claude-haiku-4-5-20251001"
 _SONNET = "claude-sonnet-4-6"
 
 
 def _client():
-    if _CLIENT is None:
+    if not _ANTHROPIC_OK:
         raise RuntimeError("anthropic package not installed — run: pip install anthropic")
-    return _CLIENT
+    from core.credentials import get_api_key
+    key = get_api_key()
+    if not key:
+        raise RuntimeError("No Anthropic API key configured — add one in Accounts > AI Settings")
+    return _anthropic.Anthropic(api_key=key)
 
 
 def summarise_thread(messages: list[dict]) -> str:
@@ -90,6 +95,52 @@ def draft_reply(thread: list[dict], user_intent: str, account_name: str = "") ->
         return resp.content[0].text.strip()
     except Exception as e:
         return f"(Draft unavailable: {e})"
+
+
+def triage_messages(messages: list[dict]) -> list[dict]:
+    """
+    Batch-triage a list of message dicts (id, from_addr, subject, snippet).
+    Returns list of {id, priority, category}.
+    priority: 1=urgent/action-required, 2=normal, 3=low/marketing
+    category: invoice|support|personal|newsletter|marketing|notification|other
+    """
+    if not messages:
+        return []
+
+    items = "\n".join(
+        f"[{i}] from={m.get('from_addr') or ''} "
+        f"subject={repr(m.get('subject') or '')} "
+        f"preview={(m.get('snippet') or '')[:120]}"
+        for i, m in enumerate(messages)
+    )
+
+    prompt = (
+        "Triage these emails. For each, assign:\n"
+        "- priority: 1=urgent/needs action, 2=normal, 3=low/marketing/newsletter\n"
+        "- category: invoice|support|personal|newsletter|marketing|notification|other\n\n"
+        "Respond with a JSON array in the same order as the input:\n"
+        "[{\"priority\":1,\"category\":\"invoice\"}, ...]\n\n"
+        f"Emails:\n{items}\n\nJSON only."
+    )
+
+    try:
+        resp = _client().messages.create(
+            model=_HAIKU,
+            max_tokens=len(messages) * 30 + 128,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = json.loads(resp.content[0].text.strip())
+        return [
+            {
+                "id": messages[i]["id"],
+                "priority": int(r.get("priority", 2)),
+                "category": str(r.get("category", "other")),
+            }
+            for i, r in enumerate(raw)
+            if i < len(messages)
+        ]
+    except Exception:
+        return []
 
 
 def extract_actions(thread: list[dict]) -> list[dict]:

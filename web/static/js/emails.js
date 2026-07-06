@@ -3,15 +3,16 @@
 // Prefix: _em
 // ═══════════════════════════════════════════════════════════════════════════
 
-let _emMessages   = [];
-let _emFolder     = 'inbox';   // role name OR null when using _emFolderId
-let _emFolderId   = null;      // specific folder id (overrides role)
-let _emFolderName = 'Inbox';
-let _emSearch     = '';
-let _emTotal      = 0;
-let _emOffset     = 0;
-let _emAccounts   = [];
-let _emSort       = { col: 'date', dir: -1 };
+let _emMessages      = [];
+let _emFolder        = 'inbox';   // role name OR null when using _emFolderId
+let _emFolderId      = null;      // specific folder id (overrides role)
+let _emFolderName    = 'Inbox';
+let _emSearch        = '';
+let _emTotal         = 0;
+let _emOffset        = 0;
+let _emAccounts      = [];
+let _emSort          = { col: 'date', dir: -1 };
+let _emPriorityFilter = null;     // null=all, 1=urgent only
 
 const _EM_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3aed'];
 
@@ -23,11 +24,12 @@ const _EM_SORT_COLS = {
 
 // Called by navigate() for role-based folders (inbox/sent/drafts/trash/all)
 async function pageEmails(folder, folderName) {
-  _emFolder   = folder || 'inbox';
-  _emFolderId = null;
-  _emFolderName = folderName || { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk', all:'All Mail' }[_emFolder] || _emFolder;
-  _emSearch   = '';
-  _emOffset   = 0;
+  _emFolder        = folder || 'inbox';
+  _emFolderId      = null;
+  _emFolderName    = folderName || { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk', all:'All Mail' }[_emFolder] || _emFolder;
+  _emSearch        = '';
+  _emOffset        = 0;
+  _emPriorityFilter = null;
   const mc = document.getElementById('module-content');
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
@@ -64,6 +66,7 @@ async function _emLoad(append = false) {
     params.set('folder', _emFolder);
   }
   if (_emSearch) params.set('q', _emSearch);
+  if (_emPriorityFilter) params.set('priority', _emPriorityFilter);
   const data = await apiFetch('/api/emails?' + params);
   if (append) {
     _emMessages = _emMessages.concat(data.messages || []);
@@ -73,6 +76,7 @@ async function _emLoad(append = false) {
   _emTotal = data.total || 0;
   _emApplySort();
   _emRender();
+  if (!append && _emFolder === 'inbox' && !_emPriorityFilter) _emAutoTriage();
 }
 
 async function _emLoadMore() {
@@ -98,6 +102,30 @@ async function _emLoadAll() {
     _emApplySort();
     _emRender();
   } catch(e) { toast('Load failed: ' + e.message, 'err'); }
+}
+
+function _emSetPriority(p) {
+  _emPriorityFilter = p;
+  _emOffset = 0;
+  _emLoad();
+}
+
+async function _emAutoTriage() {
+  try {
+    const r = await fetch('/api/ai/triage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 50 }),
+    }).then(r => r.json());
+    if (r.ok && r.data && r.data.triaged > 0) {
+      const byId = {};
+      for (const item of r.data.results) byId[item.id] = item;
+      _emMessages = _emMessages.map(m =>
+        byId[m.id] ? { ...m, ai_priority: byId[m.id].priority, ai_category: byId[m.id].category } : m
+      );
+      _emRender(true);
+    }
+  } catch(e) {}
 }
 
 function _emApplySort() {
@@ -130,6 +158,11 @@ function _emRender(keepScroll) {
   mc.innerHTML = `
     <div class="em-toolbar">
       <input class="em-search" id="em-q" placeholder="Search messages..." value="${esc(_emSearch)}">
+      ${_emFolder === 'inbox' ? `
+      <div class="em-filter-pills">
+        <button class="em-pill${_emPriorityFilter === null ? ' active' : ''}" onclick="_emSetPriority(null)">All</button>
+        <button class="em-pill em-pill-urgent${_emPriorityFilter === 1 ? ' active' : ''}" onclick="_emSetPriority(1)">&#9873; Urgent</button>
+      </div>` : ''}
       <button class="btn btn-primary btn-sm" onclick="composeNew()">&#9998; Compose</button>
     </div>
     <div class="em-list-panel">
@@ -163,16 +196,26 @@ function _emRender(keepScroll) {
   }
 }
 
+const _EM_CATEGORIES = {
+  invoice:'#8a5a00', support:'#185FA5', personal:'#3B6D11',
+  newsletter:'#555', marketing:'#555', notification:'#555',
+};
+
 function _emRow(msg) {
-  const acctIdx = _emAccounts.findIndex(a => a.id === msg.account_id);
-  const colour  = _EM_COLOURS[Math.max(0, acctIdx) % _EM_COLOURS.length];
+  const acctIdx  = _emAccounts.findIndex(a => a.id === msg.account_id);
+  const colour   = _EM_COLOURS[Math.max(0, acctIdx) % _EM_COLOURS.length];
   const isUnread = !(msg.flags || '').includes('Seen');
   const displayFrom = msg.from_name || msg.from_addr || '(unknown)';
+  const priority = msg.ai_priority;
+  const category = msg.ai_category;
+  const priorityClass = priority === 1 ? ' em-priority-urgent' : '';
+  const categoryHtml = (category && category !== 'other' && category !== 'marketing' && category !== 'notification')
+    ? `<span class="em-category" style="color:${_EM_CATEGORIES[category]||'#555'}">${esc(category)}</span>` : '';
 
-  return `<tr class="em-row${isUnread ? ' unread' : ''}" data-msgid="${msg.id}" onclick="emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
+  return `<tr class="em-row${isUnread ? ' unread' : ''}${priorityClass}" data-msgid="${msg.id}" onclick="emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
     <td><span class="em-acct-dot" style="background:${colour}" title="${esc(msg.account_name||'')}"></span></td>
-    <td class="em-from">${esc(displayFrom)}</td>
-    <td class="em-subject">${esc(msg.subject || '(no subject)')}</td>
+    <td class="em-from">${priority === 1 ? '<span class="em-urgent-flag" title="Urgent">&#9873;</span> ' : ''}${esc(displayFrom)}</td>
+    <td class="em-subject">${esc(msg.subject || '(no subject)')}${categoryHtml}</td>
     <td class="em-snippet">${esc(msg.snippet || '')}</td>
     <td class="em-date">${fmtDate(msg.date)}</td>
     <td>${msg.has_attachments ? '<span class="em-att-icon" title="Has attachments">&#128206;</span>' : ''}</td>

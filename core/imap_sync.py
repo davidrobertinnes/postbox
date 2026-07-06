@@ -53,14 +53,23 @@ def test_connection(account: dict, password: str) -> tuple[bool, str]:
 # ── Folder sync ────────────────────────────────────────────────────────────────
 
 _FOLDER_ROLE_MAP = {
-    "inbox":   "inbox",
-    "sent":    "sent",
-    "drafts":  "drafts",
-    "draft":   "drafts",
-    "trash":   "trash",
-    "deleted": "trash",
-    "junk":    "spam",
-    "spam":    "spam",
+    "inbox":            "inbox",
+    "sent":             "sent",
+    "sent items":       "sent",
+    "sent mail":        "sent",
+    "sent messages":    "sent",
+    "drafts":           "drafts",
+    "draft":            "drafts",
+    "trash":            "trash",
+    "deleted":          "trash",
+    "deleted items":    "trash",
+    "deleted messages": "trash",
+    "bin":              "trash",
+    "junk":             "spam",
+    "spam":             "spam",
+    "junk e-mail":      "spam",
+    "bulk mail":        "spam",
+    "junk mail":        "spam",
 }
 
 
@@ -178,6 +187,84 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
         conn.close()
 
     return new_count
+
+
+def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100) -> int:
+    """Sync message headers for all folders in one IMAP connection."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+    if not row:
+        conn.close()
+        return 0
+    account = dict(row)
+    password = get_password(account_id)
+    if not password:
+        conn.close()
+        return 0
+
+    folders = conn.execute(
+        "SELECT * FROM folders WHERE account_id=?", (account_id,)
+    ).fetchall()
+
+    total_new = 0
+    try:
+        client = _make_client(account, password)
+        for folder_row in folders:
+            folder_id   = folder_row["id"]
+            folder_name = folder_row["name"]
+            try:
+                client.select_folder(folder_name, readonly=True)
+                uids = client.search("ALL")
+                if not uids:
+                    conn.execute(
+                        "UPDATE folders SET message_count=0 WHERE id=?", (folder_id,)
+                    )
+                    continue
+
+                existing = set(
+                    r[0] for r in conn.execute(
+                        "SELECT uid FROM messages WHERE account_id=? AND folder_id=?",
+                        (account_id, folder_id)
+                    ).fetchall()
+                )
+                new_uids = [u for u in uids if u not in existing]
+                new_uids = new_uids[-max_msgs:]
+
+                if new_uids:
+                    fetch_data = client.fetch(new_uids, ["ENVELOPE", "FLAGS", "RFC822.SIZE", "BODYSTRUCTURE"])
+                    for uid, data in fetch_data.items():
+                        _store_envelope(conn, account_id, folder_id, uid, data)
+                        total_new += 1
+
+                try:
+                    unseen = client.search("UNSEEN")
+                    conn.execute(
+                        "UPDATE folders SET unread_count=?, message_count=? WHERE id=?",
+                        (len(unseen), len(uids), folder_id)
+                    )
+                except Exception:
+                    conn.execute(
+                        "UPDATE folders SET message_count=? WHERE id=?",
+                        (len(uids), folder_id)
+                    )
+
+            except Exception as e:
+                log.debug("sync folder '%s' account=%d: %s", folder_name, account_id, e)
+                continue
+
+        conn.execute(
+            "UPDATE accounts SET last_sync=datetime('now','localtime') WHERE id=?",
+            (account_id,)
+        )
+        conn.commit()
+        client.logout()
+
+    except Exception as e:
+        log.error("sync_all_folders_messages account=%d: %s", account_id, e)
+    finally:
+        conn.close()
+
+    return total_new
 
 
 def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict) -> None:
@@ -337,7 +424,7 @@ def start_sync(account_id: int, db_path: str, interval: int = 60) -> None:
         sync_folders(account_id, db_path)
         while not stop.is_set():
             try:
-                sync_inbox(account_id, db_path)
+                sync_all_folders_messages(account_id, db_path)
             except Exception as e:
                 log.error("sync loop account=%d: %s", account_id, e)
             stop.wait(interval)

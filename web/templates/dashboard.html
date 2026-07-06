@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Postbox</title>
+<title>Dogbox Mailman</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/postbox.css">
@@ -14,40 +14,23 @@
   <!-- ── Sidebar ── -->
   <nav class="sidebar">
     <div class="sidebar-brand">
-      <div class="brand-wordmark">post<span>box</span></div>
+      <div class="brand-wordmark">dogbox <span>mailman</span></div>
       <div class="brand-sub">AI Email Client</div>
     </div>
 
-    <div class="nav-scroll">
-      <div class="nav-section-label">Mail</div>
-      <div class="nav-item active" data-module="inbox" onclick="navigate('inbox')">
-        <span class="nav-icon">📥</span>Inbox
-        <span class="nav-badge" id="nb-inbox" style="display:none">0</span>
-      </div>
-      <div class="nav-item" data-module="sent" onclick="navigate('sent')">
-        <span class="nav-icon">📤</span>Sent
-      </div>
-      <div class="nav-item" data-module="drafts" onclick="navigate('drafts')">
-        <span class="nav-icon">📝</span>Drafts
-      </div>
-      <div class="nav-item" data-module="trash" onclick="navigate('trash')">
-        <span class="nav-icon">🗑</span>Trash
-      </div>
-      <div class="nav-item" data-module="all" onclick="navigate('all')">
-        <span class="nav-icon">📧</span>All Mail
-      </div>
+    <div class="nav-scroll" id="nav-scroll">
+      <!-- Static main folders — populated by _buildSidebar() -->
+      <div id="nav-main-folders"></div>
 
       <div class="nav-divider"></div>
       <div class="nav-section-label">Manage</div>
       <div class="nav-item" data-module="accounts" onclick="navigate('accounts')">
-        <span class="nav-icon">⚙</span>Accounts
+        <span class="nav-icon">&#9881;</span>Accounts
       </div>
     </div>
 
     <div class="sidebar-footer">
-      <div class="footer-icon" title="Compose new email" onclick="composeNew()">✏</div>
-      <div style="flex:1"></div>
-      <span id="sync-indicator" style="font-size:11px;color:var(--ink3);font-family:var(--font-mono)"></span>
+      <div class="footer-icon" title="Compose" onclick="composeNew()">&#9998;</div>
     </div>
   </nav>
 
@@ -56,13 +39,14 @@
     <div class="page-header">
       <div class="page-title" id="page-title">Inbox</div>
       <div class="page-meta">
-        <button class="btn btn-primary btn-sm" onclick="composeNew()">✏ Compose</button>
-        <div class="footer-icon" title="Refresh" onclick="_refreshPage()">↻</div>
+        <button class="btn btn-primary btn-sm" onclick="composeNew()">&#9998; Compose</button>
+        <div class="footer-icon" title="Refresh" onclick="_refreshPage()">&#8635;</div>
+        <div class="footer-icon footer-icon-close" title="Close Postbox" onclick="_closePostbox()">&#9211;</div>
       </div>
     </div>
 
     <div class="content" id="module-content">
-      <div class="state-loading">Loading…</div>
+      <div class="state-loading">Loading...</div>
     </div>
   </div>
 </div>
@@ -71,7 +55,7 @@
 <div class="det-overlay" id="det-overlay" onclick="detClose()"></div>
 <div class="det-panel" id="det-panel">
   <div class="det-hdr">
-    <button class="det-close" onclick="detClose()">✕</button>
+    <button class="det-close" onclick="detClose()">&#10005;</button>
     <div class="det-title" id="det-title"></div>
   </div>
   <div class="det-body" id="det-body"></div>
@@ -86,14 +70,15 @@
 <script src="/static/js/compose.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-// SHELL — navigation, apiFetch, toast, helpers
+// SHELL — navigation, apiFetch, toast, helpers, folder sidebar
 // ═══════════════════════════════════════════════════════════════════════════
 
-let _currentModule = '';
+let _currentModule = 'inbox';
+let _allFolders    = [];   // [{id, name, display_name, role, account_id, unread_count}, ...]
 
 async function apiFetch(path) {
   const res = await fetch(path, { credentials: 'include' });
-  const j = await res.json();
+  const j   = await res.json();
   if (!j.ok) throw new Error(j.error || 'API error');
   return j.data;
 }
@@ -104,38 +89,153 @@ function toast(msg, type) {
   el.className = 'toast' + (type === 'err' ? ' toast-err' : '');
   el.textContent = msg;
   tc.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3000);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity 0.3s'; setTimeout(()=>el.remove(),300); }, 3000);
 }
 
 function esc(s) {
-  if (s == null) return '';
+  if (s==null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function fmtDate(iso) {
   if (!iso) return '';
   try {
-    const d = new Date(iso);
+    const d   = new Date(iso);
     const now = new Date();
-    const today = now.toDateString();
-    const yesterday = new Date(now - 86400000).toDateString();
-    if (d.toDateString() === today) return d.toLocaleTimeString('en-AU', {hour:'2-digit',minute:'2-digit'});
-    if (d.toDateString() === yesterday) return 'Yesterday';
-    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString('en-AU', {day:'numeric',month:'short'});
-    return d.toLocaleDateString('en-AU', {day:'numeric',month:'short',year:'numeric'});
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+    if (d.toDateString() === new Date(now-86400000).toDateString()) return 'Yesterday';
+    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString('en-AU',{day:'numeric',month:'short'});
+    return d.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
   } catch(e) { return iso; }
 }
 
-function navigate(key) {
-  _currentModule = key;
+// ── Sidebar folder tree ──────────────────────────────────────────────────────
+
+async function _loadFolders() {
+  try {
+    _allFolders = await apiFetch('/api/folders');
+    _buildSidebar();
+  } catch(e) {}
+}
+
+function _buildSidebar() {
+  const container = document.getElementById('nav-main-folders');
+  if (!container) return;
+
+  const roles = [
+    { role:'inbox',  label:'Inbox',    icon:'&#128229;', module:'inbox'  },
+    { role:'sent',   label:'Sent',     icon:'&#128228;', module:'sent'   },
+    { role:'drafts', label:'Drafts',   icon:'&#128196;', module:'drafts' },
+    { role:'trash',  label:'Trash',    icon:'&#128465;', module:'trash'  },
+    { role:'spam',   label:'Junk',     icon:'&#128683;', module:'junk'   },
+  ];
+
+  let html = '<div class="nav-section-label">Mail</div>';
+
+  const inboxKids = _allFolders.filter(f => !f.role && f.name.startsWith('INBOX/') && f.name.split('/').length === 2);
+  const inboxDeep = _allFolders.filter(f => !f.role && f.name.startsWith('INBOX/') && f.name.split('/').length > 2);
+
+  for (const r of roles) {
+    const folder = _allFolders.find(f => f.role === r.role);
+    const unread = folder ? (folder.unread_count || 0) : 0;
+    const hasKids = r.role === 'inbox' && inboxKids.length > 0;
+
+    html += `<div class="nav-item" data-module="${r.module}" onclick="navigate('${r.module}')">
+      <span class="nav-icon">${r.icon}</span>${r.label}
+      ${unread > 0 ? `<span class="nav-badge" id="nb-${r.module}">${unread}</span>` : `<span class="nav-badge" id="nb-${r.module}" style="display:none">0</span>`}
+      ${hasKids ? `<span class="nav-expand" onclick="event.stopPropagation();_sfToggle('sf_inbox_sub')">&#9660;</span>` : ''}
+    </div>`;
+
+    if (hasKids) {
+      html += `<div id="sf_inbox_sub" class="nav-subgroup" style="display:none">`;
+      for (const f of inboxKids) {
+        const label    = f.display_name || f.name.split('/').pop();
+        const children = inboxDeep.filter(c => c.name.startsWith(f.name + '/'));
+        const sfKey    = `sf_${f.id}`;
+        html += `<div class="nav-item nav-item-sub" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(label)}')">
+          <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
+          ${children.length ? `<span class="nav-expand" onclick="event.stopPropagation();_sfToggle('${sfKey}')">&#9660;</span>` : ''}
+        </div>
+        ${children.length ? `<div id="${sfKey}" class="nav-subgroup" style="display:none">` + children.map(c => {
+          const cl = c.display_name || c.name.split('/').pop();
+          return `<div class="nav-item nav-item-sub2" data-module="f_${c.id}" onclick="navigateFolder(${c.id}, '${esc(cl)}')">
+            <span class="nav-icon" style="opacity:0.3">&#8627;</span>${esc(cl)}
+          </div>`;
+        }).join('') + '</div>' : ''}`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  // All Mail
+  html += `<div class="nav-item" data-module="all" onclick="navigate('all')">
+    <span class="nav-icon">&#128231;</span>All Mail
+  </div>`;
+
+  // Non-role, non-INBOX/* folders
+  const subfolders = _allFolders.filter(f => !f.role && f.name.includes('/') && !f.name.startsWith('INBOX/'));
+  const topLevel   = _allFolders.filter(f => !f.role && !f.name.includes('/'));
+
+  const parents = {};
+  for (const f of subfolders) {
+    const parent = f.name.split('/')[0];
+    if (!parents[parent]) parents[parent] = [];
+    parents[parent].push(f);
+  }
+
+  if (topLevel.length > 0) {
+    html += '<div class="nav-divider"></div><div class="nav-section-label">Folders</div>';
+    for (const f of topLevel) {
+      const children = parents[f.name] || [];
+      const hasKids  = children.length > 0;
+      const sfKey    = `sf_${f.id}`;
+      html += `<div class="nav-item" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(f.display_name || f.name)}')">
+        <span class="nav-icon">&#128193;</span>${esc(f.display_name || f.name)}
+        ${hasKids ? `<span class="nav-expand" onclick="event.stopPropagation();_sfToggle('${sfKey}')">&#9660;</span>` : ''}
+      </div>
+      ${hasKids ? `<div id="${sfKey}" class="nav-subgroup" style="display:none">` + children.map(c => {
+        const label = c.display_name || c.name.split('/').pop();
+        return `<div class="nav-item nav-item-sub" data-module="f_${c.id}" onclick="navigateFolder(${c.id}, '${esc(label)}')">
+          <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
+        </div>`;
+      }).join('') + '</div>' : ''}`;
+    }
+  }
+
+  container.innerHTML = html;
+  _setNavActive(_currentModule);
+}
+
+function _sfToggle(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function _setNavActive(key) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.module === key);
   });
-  const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',all:'All Mail',accounts:'Accounts'};
+}
+
+// ── Navigation ───────────────────────────────────────────────────────────────
+
+function navigate(key) {
+  _currentModule = key;
+  _setNavActive(key);
+  const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',junk:'Junk',all:'All Mail',accounts:'Accounts'};
   document.getElementById('page-title').textContent = titles[key] || key;
   detClose();
   if (key === 'accounts') { pageAccounts(); return; }
-  pageEmails(key);
+  pageEmails(key, titles[key]);
+}
+
+function navigateFolder(folderId, folderName) {
+  const key = 'f_' + folderId;
+  _currentModule = key;
+  _setNavActive(key);
+  document.getElementById('page-title').textContent = folderName;
+  detClose();
+  pageEmailsFolder(folderId, folderName);
 }
 
 function detClose() {
@@ -147,25 +247,45 @@ function detClose() {
 
 function detOpen(title) {
   document.getElementById('det-title').textContent = title;
-  document.getElementById('det-body').innerHTML = '<div class="state-loading">Loading…</div>';
+  document.getElementById('det-body').innerHTML = '<div class="state-loading">Loading...</div>';
   document.getElementById('det-foot').innerHTML = '';
   document.getElementById('det-overlay').classList.add('open');
   document.getElementById('det-panel').classList.add('open');
 }
 
-function _refreshPage() { navigate(_currentModule || 'inbox'); }
+function _refreshPage() {
+  const key = _currentModule || 'inbox';
+  if (key.startsWith('f_')) {
+    const fid = parseInt(key.slice(2));
+    const f   = _allFolders.find(x => x.id === fid);
+    navigateFolder(fid, f ? (f.display_name || f.name) : 'Folder');
+  } else {
+    navigate(key);
+  }
+}
 
-// Update unread badge
+async function _closePostbox() {
+  try {
+    await fetch('/api/shutdown', { method: 'POST' });
+  } catch(e) {}
+  window.close();
+}
+
+// ── Unread badge refresh ──────────────────────────────────────────────────────
+
 async function _refreshBadge() {
   try {
-    const d = await apiFetch('/api/emails/unread_count');
+    const d  = await apiFetch('/api/emails/unread_count');
     const el = document.getElementById('nb-inbox');
-    if (d.unread > 0) { el.textContent = d.unread; el.style.display = ''; }
-    else { el.style.display = 'none'; }
+    if (el) {
+      if (d.unread > 0) { el.textContent = d.unread; el.style.display = ''; }
+      else { el.style.display = 'none'; }
+    }
   } catch(e) {}
 }
 
-// Init
+// ── Init ─────────────────────────────────────────────────────────────────────
+_loadFolders();
 navigate('inbox');
 setInterval(_refreshBadge, 30000);
 _refreshBadge();

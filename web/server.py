@@ -1,5 +1,5 @@
 """
-Postbox — AI Email Client
+Dogbox Mailman — AI Email Client
 Flask application entry point.
 """
 import sys
@@ -7,7 +7,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, render_template, redirect
+import threading
+from flask import Flask, render_template, redirect, jsonify
 
 app = Flask(
     __name__,
@@ -47,3 +48,13 @@ def index():
 @app.route("/favicon.ico")
 def favicon():
     return redirect("/static/favicon.svg")
+
+
+@app.route("/api/shutdown", methods=["POST"])
+def shutdown():
+    def _kill():
+        import time, os, signal
+        time.sleep(0.3)
+        os.kill(os.getpid(), signal.SIGTERM)
+    threading.Thread(target=_kill, daemon=True).start()
+    return jsonify({"ok": True})

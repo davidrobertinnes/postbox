@@ -1,22 +1,35 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// EMAILS MODULE — inbox, sent, drafts, trash, all mail
+// EMAILS MODULE — inbox, sent, drafts, trash, all mail, folder view
 // Prefix: _em
 // ═══════════════════════════════════════════════════════════════════════════
 
-let _emMessages = [];
-let _emFolder = 'inbox';
-let _emSearch = '';
-let _emTotal = 0;
-let _emAccounts = [];
+let _emMessages   = [];
+let _emFolder     = 'inbox';   // role name OR null when using _emFolderId
+let _emFolderId   = null;      // specific folder id (overrides role)
+let _emFolderName = 'Inbox';
+let _emSearch     = '';
+let _emTotal      = 0;
+let _emOffset     = 0;
+let _emAccounts   = [];
+let _emSort       = { col: 'date', dir: -1 };
 
-// Account colour palette (cycles for multiple accounts)
 const _EM_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3aed'];
 
-async function pageEmails(folder) {
-  _emFolder = folder || 'inbox';
-  const mc = document.getElementById('module-content');
-  mc.innerHTML = '<div class="state-loading">Loading…</div>';
+const _EM_SORT_COLS = {
+  from_name: (a, b) => (a.from_name||a.from_addr||'').localeCompare(b.from_name||b.from_addr||''),
+  subject:   (a, b) => (a.subject||'').localeCompare(b.subject||''),
+  date:      (a, b) => (a.date||'').localeCompare(b.date||''),
+};
 
+// Called by navigate() for role-based folders (inbox/sent/drafts/trash/all)
+async function pageEmails(folder, folderName) {
+  _emFolder   = folder || 'inbox';
+  _emFolderId = null;
+  _emFolderName = folderName || { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk', all:'All Mail' }[_emFolder] || _emFolder;
+  _emSearch   = '';
+  _emOffset   = 0;
+  const mc = document.getElementById('module-content');
+  mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
     _emAccounts = await apiFetch('/api/accounts');
     await _emLoad();
@@ -25,70 +38,144 @@ async function pageEmails(folder) {
   }
 }
 
-async function _emLoad() {
-  const params = new URLSearchParams({ folder: _emFolder, limit: 200 });
+// Called by sidebar folder list for specific folder by ID
+async function pageEmailsFolder(folderId, folderDisplayName) {
+  _emFolder   = null;
+  _emFolderId = folderId;
+  _emFolderName = folderDisplayName || 'Folder';
+  _emSearch   = '';
+  _emOffset   = 0;
+  document.getElementById('page-title').textContent = _emFolderName;
+  const mc = document.getElementById('module-content');
+  mc.innerHTML = '<div class="state-loading">Loading...</div>';
+  try {
+    _emAccounts = await apiFetch('/api/accounts');
+    await _emLoad();
+  } catch(e) {
+    mc.innerHTML = `<div class="state-error">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+async function _emLoad(append = false) {
+  const params = new URLSearchParams({ limit: 200, offset: _emOffset });
+  if (_emFolderId) {
+    params.set('folder_id', _emFolderId);
+  } else {
+    params.set('folder', _emFolder);
+  }
   if (_emSearch) params.set('q', _emSearch);
   const data = await apiFetch('/api/emails?' + params);
-  _emMessages = data.messages || [];
+  if (append) {
+    _emMessages = _emMessages.concat(data.messages || []);
+  } else {
+    _emMessages = data.messages || [];
+  }
   _emTotal = data.total || 0;
+  _emApplySort();
   _emRender();
 }
 
-function _emRender() {
+async function _emLoadMore() {
+  _emOffset += 200;
+  const mc = document.getElementById('module-content');
+  const btn = mc.querySelector('.em-load-more');
+  if (btn) { btn.textContent = 'Loading...'; btn.disabled = true; }
+  try { await _emLoad(true); } catch(e) { _emOffset -= 200; toast('Load failed: ' + e.message, 'err'); }
+}
+
+async function _emLoadAll() {
+  const mc = document.getElementById('module-content');
+  const btn = mc.querySelector('.em-load-all');
+  if (btn) { btn.textContent = 'Loading...'; btn.disabled = true; }
+  try {
+    const params = new URLSearchParams({ limit: _emTotal, offset: 0 });
+    if (_emFolderId) { params.set('folder_id', _emFolderId); } else { params.set('folder', _emFolder); }
+    if (_emSearch) params.set('q', _emSearch);
+    const data = await apiFetch('/api/emails?' + params);
+    _emMessages = data.messages || [];
+    _emTotal    = data.total || 0;
+    _emOffset   = _emMessages.length;
+    _emApplySort();
+    _emRender();
+  } catch(e) { toast('Load failed: ' + e.message, 'err'); }
+}
+
+function _emApplySort() {
+  const cmp = _EM_SORT_COLS[_emSort.col];
+  if (cmp) _emMessages.sort((a, b) => cmp(a, b) * _emSort.dir);
+}
+
+function emSort(col) {
+  if (_emSort.col === col) {
+    _emSort.dir = -_emSort.dir;
+  } else {
+    _emSort.col = col;
+    _emSort.dir = col === 'date' ? -1 : 1;
+  }
+  _emApplySort();
+  _emRender(true);
+}
+
+function _emTh(col, label, extraStyle) {
+  const active = _emSort.col === col;
+  const arrow  = active ? (_emSort.dir === 1 ? ' ▲' : ' ▼') : '';
+  return `<th onclick="emSort('${col}')" style="cursor:pointer;user-select:none${extraStyle ? ';' + extraStyle : ''}" class="${active ? 'sort-active' : ''}">${label}${arrow}</th>`;
+}
+
+function _emRender(keepScroll) {
   const mc = document.getElementById('module-content');
   const msgs = _emMessages;
+  const scrollTop = keepScroll ? (mc.querySelector('.em-list-panel')?.parentElement?.scrollTop || 0) : 0;
 
   mc.innerHTML = `
     <div class="em-toolbar">
-      <input class="em-search" id="em-q" placeholder="Search messages…" value="${esc(_emSearch)}">
-      <div class="em-filter-group" id="em-filters"></div>
-      <button class="btn btn-primary btn-sm" onclick="composeNew()">✏ Compose</button>
+      <input class="em-search" id="em-q" placeholder="Search messages..." value="${esc(_emSearch)}">
+      <button class="btn btn-primary btn-sm" onclick="composeNew()">&#9998; Compose</button>
     </div>
     <div class="em-list-panel">
       <div class="tbl-overflow-x">
         <table class="em-list-table">
           <thead><tr>
             <th style="width:14px"></th>
-            <th>From</th>
-            <th>Subject</th>
-            <th style="min-width:260px">Preview</th>
-            <th>Date</th>
+            ${_emTh('from_name','From')}
+            ${_emTh('subject','Subject')}
+            <th>Preview</th>
+            ${_emTh('date','Date','min-width:90px')}
             <th style="width:22px"></th>
           </tr></thead>
-          <tbody id="em-tbody">
-            ${msgs.length ? msgs.map(_emRow).join('') : `<tr><td colspan="6" class="em-empty">No messages</td></tr>`}
+          <tbody>
+            ${msgs.length
+              ? msgs.map(_emRow).join('')
+              : `<tr><td colspan="6" class="em-empty">No messages in this folder</td></tr>`}
           </tbody>
         </table>
       </div>
     </div>
     <div class="mt-8">
       <span class="count-pill">${msgs.length} of ${_emTotal} message${_emTotal !== 1 ? 's' : ''}</span>
+      ${msgs.length < _emTotal ? `<button class="btn btn-outline btn-sm em-load-more" style="margin-left:12px" onclick="_emLoadMore()">Load more</button><button class="btn btn-outline btn-sm em-load-all" style="margin-left:6px" onclick="_emLoadAll()">Load all</button>` : ''}
     </div>`;
 
-  // Search
   const q = document.getElementById('em-q');
   if (q) {
-    q.addEventListener('input', e => { _emSearch = e.target.value; _emLoad(); });
+    q.addEventListener('input', e => { _emSearch = e.target.value; _emOffset = 0; _emLoad(); });
     q.addEventListener('keydown', e => { if (e.key === 'Escape') { _emSearch = ''; q.value = ''; _emLoad(); } });
   }
 }
 
 function _emRow(msg) {
   const acctIdx = _emAccounts.findIndex(a => a.id === msg.account_id);
-  const colour = _EM_COLOURS[acctIdx >= 0 ? acctIdx % _EM_COLOURS.length : 0];
-  const flags = msg.flags || '[]';
-  const isUnread = !flags.includes('Seen');
-  const unreadCls = isUnread ? ' unread' : '';
-
+  const colour  = _EM_COLOURS[Math.max(0, acctIdx) % _EM_COLOURS.length];
+  const isUnread = !(msg.flags || '').includes('Seen');
   const displayFrom = msg.from_name || msg.from_addr || '(unknown)';
 
-  return `<tr class="em-row${unreadCls}" onclick="emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
-    <td><span class="em-acct-dot" style="background:${colour}" title="${esc(msg.account_name || '')}"></span></td>
+  return `<tr class="em-row${isUnread ? ' unread' : ''}" onclick="emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
+    <td><span class="em-acct-dot" style="background:${colour}" title="${esc(msg.account_name||'')}"></span></td>
     <td class="em-from">${esc(displayFrom)}</td>
     <td class="em-subject">${esc(msg.subject || '(no subject)')}</td>
     <td class="em-snippet">${esc(msg.snippet || '')}</td>
     <td class="em-date">${fmtDate(msg.date)}</td>
-    <td>${msg.has_attachments ? '<span class="em-att-icon" title="Has attachments">📎</span>' : ''}</td>
+    <td>${msg.has_attachments ? '<span class="em-att-icon" title="Has attachments">&#128206;</span>' : ''}</td>
   </tr>`;
 }
 
@@ -98,7 +185,6 @@ async function emOpen(msgId, threadId) {
     const msg = await apiFetch(`/api/emails/${msgId}`);
     document.getElementById('det-title').textContent = msg.subject || '(no subject)';
     _emRenderDetail(msg, threadId);
-    // Trigger AI summary in background
     if (threadId) _emLoadSummary(threadId);
   } catch(e) {
     document.getElementById('det-body').innerHTML = `<div class="state-error">${esc(e.message)}</div>`;
@@ -106,15 +192,14 @@ async function emOpen(msgId, threadId) {
 }
 
 function _emRenderDetail(msg, threadId) {
-  const toList = _emParseAddrs(msg.to_addrs);
-  const toStr = toList.map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', ');
+  const toList  = _emParseAddrs(msg.to_addrs);
+  const toStr   = toList.map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', ');
   const fromStr = msg.from_name ? `${msg.from_name} <${msg.from_addr}>` : msg.from_addr;
-
   const hasHtml = msg.body_html && msg.body_html.trim();
 
   document.getElementById('det-body').innerHTML = `
     <div class="ai-summary-box" id="ai-summary-box">
-      <div class="ai-summary-label">✦ AI Summary</div>
+      <div class="ai-summary-label">&#10022; AI Summary</div>
       <div id="ai-summary-text"></div>
     </div>
     <div class="em-meta-strip">
@@ -124,12 +209,11 @@ function _emRenderDetail(msg, threadId) {
     </div>
     ${hasHtml
       ? `<iframe class="em-body-frame" id="em-iframe" sandbox="allow-same-origin" style="height:500px"></iframe>`
-      : `<pre class="em-body-text">${esc(msg.body_text || '(empty)')}</pre>`
-    }`;
+      : `<pre class="em-body-text">${esc(msg.body_text || '(empty)')}</pre>`}`;
 
   if (hasHtml) {
     const iframe = document.getElementById('em-iframe');
-    iframe.srcdoc = `<html><head><base target="_blank"><style>body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#1A2E45;padding:12px}a{color:#185FA5}</style></head><body>${msg.body_html}</body></html>`;
+    iframe.srcdoc = `<html><head><base target="_blank"><style>body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#1A2E45;padding:12px}a{color:#185FA5}img{max-width:100%}</style></head><body>${msg.body_html}</body></html>`;
     iframe.onload = () => {
       try { iframe.style.height = (iframe.contentWindow.document.body.scrollHeight + 40) + 'px'; } catch(e) {}
     };
@@ -138,70 +222,52 @@ function _emRenderDetail(msg, threadId) {
   const foot = document.getElementById('det-foot');
   foot.innerHTML = '';
 
-  // Reply button
   const replyBtn = document.createElement('button');
   replyBtn.className = 'btn btn-primary btn-sm';
-  replyBtn.textContent = '↩ Reply';
+  replyBtn.textContent = 'Reply';
   replyBtn.onclick = () => composeReply(msg);
   foot.appendChild(replyBtn);
 
-  // AI Draft button
   const aiBtn = document.createElement('button');
   aiBtn.className = 'btn btn-outline btn-sm';
-  aiBtn.textContent = '✦ Draft with AI';
+  aiBtn.textContent = 'Draft with AI';
   aiBtn.onclick = () => _emAiDraft(msg, threadId);
   foot.appendChild(aiBtn);
 
-  // Forward button
   const fwdBtn = document.createElement('button');
   fwdBtn.className = 'btn btn-outline btn-sm';
-  fwdBtn.textContent = '→ Forward';
+  fwdBtn.textContent = 'Forward';
   fwdBtn.onclick = () => composeForward(msg);
   foot.appendChild(fwdBtn);
 }
 
 async function _emLoadSummary(threadId) {
   try {
-    const data = await fetch('/api/ai/summarise', {
+    const r = await fetch('/api/ai/summarise', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({thread_id: threadId}),
     }).then(r => r.json());
-    if (data.ok && data.data && data.data.summary) {
+    if (r.ok && r.data && r.data.summary) {
       const box = document.getElementById('ai-summary-box');
       const txt = document.getElementById('ai-summary-text');
-      if (box && txt) {
-        txt.textContent = data.data.summary;
-        box.classList.add('loaded');
-      }
+      if (box && txt) { txt.textContent = r.data.summary; box.classList.add('loaded'); }
     }
   } catch(e) {}
 }
 
 async function _emAiDraft(msg, threadId) {
-  const intent = prompt('Describe your reply in one line:\n(e.g. "Confirm the meeting", "Decline politely", "Ask for more info")');
+  const intent = prompt('Describe your reply:\n(e.g. "Confirm the meeting", "Decline politely", "Ask for more info")');
   if (!intent) return;
-
-  // Find account_id from current accounts
-  const acct = _emAccounts.find(a => a.id === msg.account_id);
   try {
     const r = await fetch('/api/ai/draft', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        thread_id: threadId || msg.message_id,
-        intent,
-        account_id: msg.account_id,
-      }),
+      body: JSON.stringify({ thread_id: threadId || msg.message_id, intent, account_id: msg.account_id }),
     }).then(r => r.json());
-    if (r.ok && r.data && r.data.draft) {
-      composeReply(msg, r.data.draft);
-    } else {
-      toast(r.error || 'Draft failed', 'err');
-    }
-  } catch(e) {
-    toast('AI draft failed: ' + e.message, 'err');
-  }
+    if (r.ok && r.data && r.data.draft) { composeReply(msg, r.data.draft); }
+    else { toast(r.error || 'Draft failed', 'err'); }
+  } catch(e) { toast('AI draft failed: ' + e.message, 'err'); }
 }
 
 function _emParseAddrs(json_str) {

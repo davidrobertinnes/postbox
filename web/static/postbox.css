@@ -156,6 +156,27 @@ html, body {
   margin: 8px 10px;
 }
 
+.nav-subgroup { overflow: hidden; }
+
+.nav-expand {
+  font-size: 10px;
+  color: var(--ink3);
+  padding: 0 0 0 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.nav-expand:hover { color: var(--accent); }
+
+.nav-item-sub {
+  padding-left: 22px;
+  font-size: 12px;
+}
+
+.nav-item-sub2 {
+  padding-left: 36px;
+  font-size: 12px;
+}
+
 .sidebar-footer {
   padding: 12px 10px;
   border-top: 1px solid var(--border);
@@ -176,6 +197,8 @@ html, body {
   transition: background 0.13s;
 }
 .footer-icon:hover { background: var(--accent-dim); color: var(--accent); }
+.footer-icon-close { color: var(--red); }
+.footer-icon-close:hover { background: var(--red-dim); color: var(--red); }
 
 /* ── Main ── */
 .main {

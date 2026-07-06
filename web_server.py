@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Postbox — AI Email Client
+Dogbox Mailman — AI Email Client
 Usage: python web_server.py [--port 5200]
 
-Stores all data in postbox.db in the app directory.
+Stores all data in postbox.pbox in the app directory.
 """
 import sys
 import os
@@ -147,7 +147,7 @@ def _open_app_browser(url: str) -> bool:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Postbox — AI Email Client")
+    parser = argparse.ArgumentParser(description="Dogbox Mailman — AI Email Client")
     parser.add_argument("--port", type=int, default=5200)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
@@ -155,17 +155,17 @@ if __name__ == "__main__":
     url = f"http://{args.host}:{args.port}"
 
     if _server_already_running(args.host, args.port):
-        print(f"\n  Postbox: already running at {url}")
+        print(f"\n  Dogbox Mailman: already running at {url}")
         _open_app_browser(url)
         sys.exit(0)
 
-    db_path = os.path.join(_DATA_DIR, "postbox.db")
+    db_path = os.path.join(_DATA_DIR, "postbox.pbox")
     _srv.DB_PATH = db_path
     _srv.app.config["DB_PATH"] = db_path
 
     initialise_database(db_path)
 
-    print(f"\n  Postbox - AI Email Client")
+    print(f"\n  Dogbox Mailman - AI Email Client")
     print(f"  {'-' * 35}")
     print(f"  Database : {db_path}")
     print(f"  Open     : {url}\n")

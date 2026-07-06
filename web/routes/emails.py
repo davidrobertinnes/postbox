@@ -23,16 +23,20 @@ def api_emails():
     """
     conn = get_connection(db())
     folder_role = request.args.get("folder", "inbox")
+    folder_id = request.args.get("folder_id", type=int)
     account_id = request.args.get("account", type=int)
     q = request.args.get("q", "").strip()
     unread_only = request.args.get("unread") == "1"
-    limit = min(int(request.args.get("limit", 100)), 500)
+    limit = min(int(request.args.get("limit", 100)), 9999)
     offset = int(request.args.get("offset", 0))
 
     params = []
     where = []
 
-    if folder_role != "all":
+    if folder_id:
+        where.append("m.folder_id=?")
+        params.append(folder_id)
+    elif folder_role != "all":
         where.append("f.role=?")
         params.append(folder_role)
 

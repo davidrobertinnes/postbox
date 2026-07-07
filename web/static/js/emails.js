@@ -288,6 +288,12 @@ function _emRenderDetail(msg, threadId) {
   fwdBtn.onclick = () => composeForward(msg);
   foot.appendChild(fwdBtn);
 
+  const moveBtn = document.createElement('button');
+  moveBtn.className = 'btn btn-outline btn-sm';
+  moveBtn.textContent = 'Move to…';
+  moveBtn.onclick = () => _emMoveModal(msg);
+  foot.appendChild(moveBtn);
+
   const unreadBtn = document.createElement('button');
   unreadBtn.className = 'btn btn-outline btn-sm';
   unreadBtn.textContent = 'Mark Unread';
@@ -322,6 +328,81 @@ async function _emTrash(msgId, btn) {
     _emRender(true);
     toast('Moved to Trash');
   } catch(e) { toast('Delete failed: ' + e.message, 'err'); if (btn) { btn.textContent = 'Delete'; btn.disabled = false; } }
+}
+
+async function _emMoveModal(msg) {
+  // Fetch folders for this account
+  let folders;
+  try {
+    folders = await apiFetch('/api/folders?account=' + msg.account_id);
+  } catch(e) {
+    toast('Could not load folders: ' + e.message, 'err');
+    return;
+  }
+
+  // Exclude current folder and trash (use Delete for that)
+  const choices = folders.filter(f => f.id !== msg.folder_id && f.role !== 'trash');
+
+  const bd = document.createElement('div');
+  bd.className = 'modal-bd';
+  bd.style.display = 'flex';
+  bd.innerHTML = `
+    <div class="modal-box" style="width:360px;max-height:520px;display:flex;flex-direction:column">
+      <div class="modal-hdr">
+        <span>Move to Folder</span>
+        <button class="modal-close" onclick="this.closest('.modal-bd').remove()">&#x2715;</button>
+      </div>
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+        <input id="em-move-q" class="form-input" placeholder="Search folders…" autocomplete="off" style="width:100%">
+      </div>
+      <div id="em-move-list" style="overflow-y:auto;flex:1;padding:6px 0"></div>
+    </div>`;
+  document.body.appendChild(bd);
+  bd.addEventListener('click', e => { if (e.target === bd) bd.remove(); });
+
+  const listEl = bd.querySelector('#em-move-list');
+  const searchEl = bd.querySelector('#em-move-q');
+
+  function renderList(q) {
+    const filtered = q
+      ? choices.filter(f => f.name.toLowerCase().includes(q.toLowerCase()))
+      : choices;
+    if (!filtered.length) {
+      listEl.innerHTML = '<div style="padding:12px 16px;color:var(--ink3);font-size:13px">No matching folders</div>';
+      return;
+    }
+    listEl.innerHTML = filtered.map(f => {
+      const label = f.display_name || f.name;
+      const roleTag = f.role ? `<span style="font-size:10px;color:var(--ink3);margin-left:6px">${esc(f.role)}</span>` : '';
+      return `<div class="em-move-row" data-fid="${f.id}" data-fname="${esc(label)}">${esc(label)}${roleTag}</div>`;
+    }).join('');
+    listEl.querySelectorAll('.em-move-row').forEach(row => {
+      row.onclick = () => _emMoveToFolder(msg, parseInt(row.dataset.fid), row.dataset.fname, bd);
+    });
+  }
+
+  renderList('');
+  searchEl.addEventListener('input', e => renderList(e.target.value));
+  searchEl.focus();
+}
+
+async function _emMoveToFolder(msg, folderId, folderName, modalEl) {
+  if (modalEl) modalEl.remove();
+  try {
+    const r = await fetch(`/api/emails/${msg.id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_id: folderId }),
+    }).then(r => r.json());
+    if (!r.ok) { toast(r.error || 'Move failed', 'err'); return; }
+    detClose();
+    _emMessages = _emMessages.filter(m => m.id !== msg.id);
+    _emTotal = Math.max(0, _emTotal - 1);
+    _emRender(true);
+    toast(`Moved to ${folderName}`);
+  } catch(e) {
+    toast('Move failed: ' + e.message, 'err');
+  }
 }
 
 async function _emLoadSummary(threadId) {

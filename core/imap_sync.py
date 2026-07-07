@@ -411,10 +411,116 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
         conn.close()
 
 
-# ── Background sync loop ───────────────────────────────────────────────────────
+# ── Background sync loop — IDLE with polling fallback ─────────────────────────
+
+_IDLE_MAX_SECS     = 29 * 60   # re-IDLE before server's 30-min limit
+_FULL_SYNC_INTERVAL = 10 * 60  # full all-folder sync every 10 min
+
+
+def _idle_watch(client, stop: threading.Event, max_secs: int = _IDLE_MAX_SECS) -> bool:
+    """
+    Enter IMAP IDLE and block until EXISTS/RECENT push, stop event, or timeout.
+    Returns True if new mail was signalled.
+    """
+    client.idle()
+    deadline = time.monotonic() + max_secs
+    new_mail = False
+    try:
+        while not stop.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            responses = client.idle_check(timeout=min(1.0, remaining))
+            for resp in (responses or []):
+                if len(resp) >= 2 and resp[1] in (b"EXISTS", b"RECENT"):
+                    new_mail = True
+            if new_mail:
+                break
+    except Exception as e:
+        log.debug("idle_watch: %s", e)
+    finally:
+        try:
+            client.idle_done()
+        except Exception:
+            pass
+    return new_mail
+
+
+def _sync_loop_idle(account_id: int, db_path: str, stop: threading.Event) -> None:
+    """
+    Main sync loop for one account. Uses IMAP IDLE on the inbox for real-time
+    new-mail detection; falls back to 60s polling if server lacks IDLE.
+    Full all-folder sync runs every _FULL_SYNC_INTERVAL seconds regardless.
+    """
+    last_full = 0.0
+
+    while not stop.is_set():
+        # Full all-folder sync on schedule
+        if time.monotonic() - last_full >= _FULL_SYNC_INTERVAL:
+            try:
+                sync_all_folders_messages(account_id, db_path)
+                last_full = time.monotonic()
+            except Exception as e:
+                log.error("full sync account=%d: %s", account_id, e)
+
+        # Connect for IDLE (or polling fallback)
+        try:
+            conn = get_connection(db_path)
+            acct_row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+            conn.close()
+            if not acct_row:
+                break
+
+            password = get_password(account_id)
+            if not password:
+                stop.wait(60)
+                continue
+
+            client = _make_client(dict(acct_row), password)
+            caps = client.capabilities()
+            has_idle = b"IDLE" in caps or "IDLE" in caps
+
+            if not has_idle:
+                # Polling fallback — sync now, wait 60s
+                client.logout()
+                stop.wait(60)
+                try:
+                    sync_all_folders_messages(account_id, db_path)
+                    last_full = time.monotonic()
+                except Exception as e:
+                    log.error("poll sync account=%d: %s", account_id, e)
+                continue
+
+            # Find inbox folder name
+            conn = get_connection(db_path)
+            inbox_row = conn.execute(
+                "SELECT name FROM folders WHERE account_id=? AND role='inbox' LIMIT 1",
+                (account_id,)
+            ).fetchone()
+            conn.close()
+            inbox_name = inbox_row["name"] if inbox_row else "INBOX"
+
+            client.select_folder(inbox_name)
+            got_new = _idle_watch(client, stop)
+
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+            if got_new and not stop.is_set():
+                try:
+                    sync_inbox(account_id, db_path)
+                except Exception as e:
+                    log.error("inbox sync after IDLE account=%d: %s", account_id, e)
+
+        except Exception as e:
+            log.error("idle loop account=%d: %s", account_id, e)
+            stop.wait(30)  # Brief pause before reconnecting
+
 
 def start_sync(account_id: int, db_path: str, interval: int = 60) -> None:
-    """Start a background thread that syncs this account every `interval` seconds."""
+    """Start a background IDLE/sync thread for this account."""
     if account_id in _sync_threads and _sync_threads[account_id].is_alive():
         return
     stop = threading.Event()
@@ -422,12 +528,7 @@ def start_sync(account_id: int, db_path: str, interval: int = 60) -> None:
 
     def _loop():
         sync_folders(account_id, db_path)
-        while not stop.is_set():
-            try:
-                sync_all_folders_messages(account_id, db_path)
-            except Exception as e:
-                log.error("sync loop account=%d: %s", account_id, e)
-            stop.wait(interval)
+        _sync_loop_idle(account_id, db_path, stop)
 
     t = threading.Thread(target=_loop, daemon=True, name=f"sync-{account_id}")
     _sync_threads[account_id] = t

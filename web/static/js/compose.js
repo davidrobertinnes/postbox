@@ -3,8 +3,8 @@
 // Prefix: _cmp
 // ═══════════════════════════════════════════════════════════════════════════
 
-function composeNew() {
-  _cmpOpen({ subject: '', to: '', body: '', replyMsgId: null, references: null });
+function composeNew(accountId = null) {
+  _cmpOpen({ subject: '', to: '', body: '', replyMsgId: null, references: null, accountId });
 }
 
 function composeReply(msg, draftBody) {

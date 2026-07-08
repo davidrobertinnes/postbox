@@ -179,7 +179,7 @@ function _emRender(keepScroll) {
         <button class="em-pill${_emPriorityFilter === null ? ' active' : ''}" onclick="_emSetPriority(null)">All</button>
         <button class="em-pill em-pill-urgent${_emPriorityFilter === 1 ? ' active' : ''}" onclick="_emSetPriority(1)">&#9873; Urgent</button>
       </div>` : ''}
-      <button class="btn btn-primary btn-sm" onclick="composeNew()">&#9998; Compose</button>
+      <button class="btn btn-primary btn-sm" onclick="composeNew(${_emAccountId || 'null'})">&#9998; Compose</button>
     </div>
     <div class="em-list-panel">
       <div class="tbl-overflow-x">
@@ -279,7 +279,7 @@ function _emRenderDetail(msg, threadId) {
     ${msg._fetch_error
       ? `<div class="state-error" style="margin:16px 0">${esc(msg._fetch_error)}</div>`
       : hasHtml
-        ? `<iframe class="em-body-frame" id="em-iframe" sandbox="allow-same-origin" style="height:500px"></iframe>`
+        ? `<iframe class="em-body-frame" id="em-iframe" sandbox="allow-same-origin allow-popups" style="height:500px"></iframe>`
         : `<pre class="em-body-text">${esc(msg.body_text || '(empty)')}</pre>`}`;
 
   if (hasHtml) {

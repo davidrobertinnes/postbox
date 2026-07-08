@@ -34,3 +34,5 @@
 - web/static/js/emails.js: Move to… button in email detail footer; `_emMoveModal` fetches account folders, renders searchable list (search input + scrollable rows) excluding current folder and trash; `_emMoveToFolder` calls `POST /api/emails/<id>/move`, removes from list, toasts
 - web/static/postbox.css: `.em-move-row` styles for folder picker modal
 - core/imap_sync.py: Replaced 60s poll loop with IMAP IDLE; `_idle_watch()` enters IDLE, polls `idle_check(timeout=1)` so stop event interrupts within 1s, returns True on EXISTS/RECENT push; `_sync_loop_idle()` IDLEs on inbox for real-time new mail, reconnects every 29 min before server's 30-min timeout, full all-folder sync every 10 min; automatic 60s polling fallback for servers without IDLE capability; confirmed working against Internode (Dovecot)
+- web/static/js/emails.js: HTML email iframe sandbox now includes `allow-popups` so links open in new tabs
+- web/static/js/compose.js, emails.js: `composeNew()` accepts optional `accountId`; Compose button passes current account filter so new mail defaults to the active account when filtered to a single account

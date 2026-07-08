@@ -13,6 +13,7 @@ let _emOffset        = 0;
 let _emAccounts      = [];
 let _emSort          = { col: 'date', dir: -1 };
 let _emPriorityFilter = null;     // null=all, 1=urgent only
+let _emAccountId     = null;      // null=all accounts, or account id
 
 const _EM_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3aed'];
 
@@ -23,13 +24,15 @@ const _EM_SORT_COLS = {
 };
 
 // Called by navigate() for role-based folders (inbox/sent/drafts/trash/all)
-async function pageEmails(folder, folderName) {
+// accountId is optional — pass to pre-filter to a specific account (from sidebar account sections)
+async function pageEmails(folder, folderName, accountId = null) {
   _emFolder        = folder || 'inbox';
   _emFolderId      = null;
   _emFolderName    = folderName || { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk', all:'All Mail' }[_emFolder] || _emFolder;
   _emSearch        = '';
   _emOffset        = 0;
   _emPriorityFilter = null;
+  _emAccountId     = accountId;
   const mc = document.getElementById('module-content');
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
@@ -47,6 +50,7 @@ async function pageEmailsFolder(folderId, folderDisplayName) {
   _emFolderName = folderDisplayName || 'Folder';
   _emSearch   = '';
   _emOffset   = 0;
+  _emAccountId = null;
   document.getElementById('page-title').textContent = _emFolderName;
   const mc = document.getElementById('module-content');
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
@@ -67,6 +71,7 @@ async function _emLoad(append = false) {
   }
   if (_emSearch) params.set('q', _emSearch);
   if (_emPriorityFilter) params.set('priority', _emPriorityFilter);
+  if (_emAccountId) params.set('account', _emAccountId);
   const data = await apiFetch('/api/emails?' + params);
   if (append) {
     _emMessages = _emMessages.concat(data.messages || []);
@@ -106,6 +111,12 @@ async function _emLoadAll() {
 
 function _emSetPriority(p) {
   _emPriorityFilter = p;
+  _emOffset = 0;
+  _emLoad();
+}
+
+function _emSetAccount(id) {
+  _emAccountId = id;
   _emOffset = 0;
   _emLoad();
 }
@@ -158,6 +169,11 @@ function _emRender(keepScroll) {
   mc.innerHTML = `
     <div class="em-toolbar">
       <input class="em-search" id="em-q" placeholder="Search messages..." value="${esc(_emSearch)}">
+      ${_emAccounts.length > 1 ? `
+      <div class="em-filter-pills">
+        <button class="em-pill${_emAccountId === null ? ' active' : ''}" onclick="_emSetAccount(null)">All</button>
+        ${_emAccounts.map((a, i) => `<button class="em-pill${_emAccountId === a.id ? ' active' : ''}" onclick="_emSetAccount(${a.id})"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${_EM_COLOURS[i % _EM_COLOURS.length]};margin-right:5px;vertical-align:middle"></span>${esc(a.name)}</button>`).join('')}
+      </div>` : ''}
       ${_emFolder === 'inbox' ? `
       <div class="em-filter-pills">
         <button class="em-pill${_emPriorityFilter === null ? ' active' : ''}" onclick="_emSetPriority(null)">All</button>
@@ -229,6 +245,7 @@ async function emOpen(msgId, threadId) {
     document.getElementById('det-title').textContent = msg.subject || '(no subject)';
     _emRenderDetail(msg, threadId);
     if (threadId) _emLoadSummary(threadId);
+    if (threadId) _emLoadActions(threadId);
     // Write \Seen back to IMAP server (fire and forget)
     fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
     // Update row styling immediately
@@ -250,14 +267,20 @@ function _emRenderDetail(msg, threadId) {
       <div class="ai-summary-label">&#10022; AI Summary</div>
       <div id="ai-summary-text"></div>
     </div>
+    <div class="ai-actions-box" id="ai-actions-box">
+      <div class="ai-actions-label">&#9889; Actions</div>
+      <div id="ai-actions-list"></div>
+    </div>
     <div class="em-meta-strip">
       <div class="em-meta-row"><span class="em-meta-label">From</span><span class="em-meta-val">${esc(fromStr)}</span></div>
       <div class="em-meta-row"><span class="em-meta-label">To</span><span class="em-meta-val">${esc(toStr)}</span></div>
       <div class="em-meta-row"><span class="em-meta-label">Date</span><span class="em-meta-val">${fmtDate(msg.date)}</span></div>
     </div>
-    ${hasHtml
-      ? `<iframe class="em-body-frame" id="em-iframe" sandbox="allow-same-origin" style="height:500px"></iframe>`
-      : `<pre class="em-body-text">${esc(msg.body_text || '(empty)')}</pre>`}`;
+    ${msg._fetch_error
+      ? `<div class="state-error" style="margin:16px 0">${esc(msg._fetch_error)}</div>`
+      : hasHtml
+        ? `<iframe class="em-body-frame" id="em-iframe" sandbox="allow-same-origin" style="height:500px"></iframe>`
+        : `<pre class="em-body-text">${esc(msg.body_text || '(empty)')}</pre>`}`;
 
   if (hasHtml) {
     const iframe = document.getElementById('em-iframe');
@@ -417,6 +440,30 @@ async function _emLoadSummary(threadId) {
       const txt = document.getElementById('ai-summary-text');
       if (box && txt) { txt.textContent = r.data.summary; box.classList.add('loaded'); }
     }
+  } catch(e) {}
+}
+
+async function _emLoadActions(threadId) {
+  if (!threadId) return;
+  try {
+    const r = await fetch('/api/ai/actions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({thread_id: threadId}),
+    }).then(r => r.json());
+    if (!r.ok || !r.data || !r.data.actions || !r.data.actions.length) return;
+    const box = document.getElementById('ai-actions-box');
+    const list = document.getElementById('ai-actions-list');
+    if (!box || !list) return;
+    list.innerHTML = r.data.actions.map(a => {
+      const typeClass = `ai-action-type-${a.type || 'task'}`;
+      return `<div class="ai-action-item">
+        <span class="ai-action-type ${typeClass}">${esc(a.type || 'task')}</span>
+        <span class="ai-action-desc">${esc(a.description)}</span>
+        ${a.due_date ? `<span class="ai-action-due">${esc(a.due_date)}</span>` : ''}
+      </div>`;
+    }).join('');
+    box.classList.add('loaded');
   } catch(e) {}
 }
 

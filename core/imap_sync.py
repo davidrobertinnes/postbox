@@ -72,6 +72,15 @@ _FOLDER_ROLE_MAP = {
     "junk mail":        "spam",
 }
 
+# Gmail virtual folders that duplicate messages already covered by other folders.
+# Syncing these causes every email to appear 2-3 times in the DB.
+_GMAIL_SKIP_FOLDERS = {
+    "[gmail]/all mail",
+    "[gmail]/important",
+    "[gmail]/starred",
+    "[gmail]",          # container pseudo-folder
+}
+
 
 def _guess_role(name: str) -> str | None:
     low = name.lower().split("/")[-1]  # last path component
@@ -212,6 +221,8 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
         for folder_row in folders:
             folder_id   = folder_row["id"]
             folder_name = folder_row["name"]
+            if folder_name.lower() in _GMAIL_SKIP_FOLDERS:
+                continue
             try:
                 client.select_folder(folder_name, readonly=True)
                 uids = client.search("ALL")
@@ -405,7 +416,7 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
         client.logout()
         return True
     except Exception as e:
-        log.error("fetch_body uid=%d: %s", uid, e)
+        log.error("fetch_body uid=%s: %s", uid, e)
         return False
     finally:
         conn.close()

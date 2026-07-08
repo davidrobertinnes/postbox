@@ -122,6 +122,14 @@ function _buildSidebar() {
   const container = document.getElementById('nav-main-folders');
   if (!container) return;
 
+  // Collect unique accounts from folder list
+  const acctMap = {};
+  for (const f of _allFolders) {
+    if (!acctMap[f.account_id]) acctMap[f.account_id] = { id: f.account_id, name: f.account_name, email: f.account_email };
+  }
+  const accts = Object.values(acctMap);
+  const multiAccount = accts.length > 1;
+
   const roles = [
     { role:'inbox',  label:'Inbox',    icon:'&#128229;', module:'inbox'  },
     { role:'sent',   label:'Sent',     icon:'&#128228;', module:'sent'   },
@@ -132,13 +140,13 @@ function _buildSidebar() {
 
   let html = '<div class="nav-section-label">Mail</div>';
 
+  // INBOX/* subfolders — only show under main Inbox for single-account
   const inboxKids = _allFolders.filter(f => !f.role && f.name.startsWith('INBOX/') && f.name.split('/').length === 2);
   const inboxDeep = _allFolders.filter(f => !f.role && f.name.startsWith('INBOX/') && f.name.split('/').length > 2);
 
   for (const r of roles) {
-    const folder = _allFolders.find(f => f.role === r.role);
-    const unread = folder ? (folder.unread_count || 0) : 0;
-    const hasKids = r.role === 'inbox' && inboxKids.length > 0;
+    const unread = _allFolders.filter(f => f.role === r.role).reduce((s, f) => s + (f.unread_count || 0), 0);
+    const hasKids = r.role === 'inbox' && inboxKids.length > 0 && !multiAccount;
 
     html += `<div class="nav-item" data-module="${r.module}" onclick="navigate('${r.module}')">
       <span class="nav-icon">${r.icon}</span>${r.label}
@@ -172,33 +180,69 @@ function _buildSidebar() {
     <span class="nav-icon">&#128231;</span>All Mail
   </div>`;
 
-  // Non-role, non-INBOX/* folders
-  const subfolders = _allFolders.filter(f => !f.role && f.name.includes('/') && !f.name.startsWith('INBOX/'));
-  const topLevel   = _allFolders.filter(f => !f.role && !f.name.includes('/'));
+  if (multiAccount) {
+    // Per-account sections — each account gets its own Inbox + custom folders
+    for (let i = 0; i < accts.length; i++) {
+      const acct   = accts[i];
+      const colour = _EM_COLOURS[i % _EM_COLOURS.length];
+      const acctUnread = _allFolders
+        .filter(f => f.account_id === acct.id && f.role === 'inbox')
+        .reduce((s, f) => s + (f.unread_count || 0), 0);
 
-  const parents = {};
-  for (const f of subfolders) {
-    const parent = f.name.split('/')[0];
-    if (!parents[parent]) parents[parent] = [];
-    parents[parent].push(f);
-  }
+      // Custom folders for this account: INBOX/* subfolders and plain top-level folders.
+      // Exclude role-mapped folders (already in Mail section) and Gmail virtual folders.
+      const customFolders = _allFolders.filter(f =>
+        f.account_id === acct.id &&
+        !f.role &&
+        !f.name.toLowerCase().startsWith('[gmail]/') &&
+        f.name.toLowerCase() !== '[gmail]' &&
+        (f.message_count || 0) > 0
+      );
 
-  if (topLevel.length > 0) {
-    html += '<div class="nav-divider"></div><div class="nav-section-label">Folders</div>';
-    for (const f of topLevel) {
-      const children = parents[f.name] || [];
-      const hasKids  = children.length > 0;
-      const sfKey    = `sf_${f.id}`;
-      html += `<div class="nav-item" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(f.display_name || f.name)}')">
-        <span class="nav-icon">&#128193;</span>${esc(f.display_name || f.name)}
-        ${hasKids ? `<span class="nav-expand" onclick="event.stopPropagation();_sfToggle('${sfKey}')">&#9660;</span>` : ''}
-      </div>
-      ${hasKids ? `<div id="${sfKey}" class="nav-subgroup" style="display:none">` + children.map(c => {
-        const label = c.display_name || c.name.split('/').pop();
-        return `<div class="nav-item nav-item-sub" data-module="f_${c.id}" onclick="navigateFolder(${c.id}, '${esc(label)}')">
-          <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
-        </div>`;
-      }).join('') + '</div>' : ''}`;
+      html += `<div class="nav-divider"></div>
+        <div class="nav-section-label">
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${colour};margin-right:5px;vertical-align:middle"></span>${esc(acct.name)}
+        </div>
+        <div class="nav-item" data-module="ai_${acct.id}_inbox" onclick="navigateAccountFolder(${acct.id}, '${esc(acct.name)}', 'inbox')">
+          <span class="nav-icon">&#128229;</span>Inbox
+          ${acctUnread > 0 ? `<span class="nav-badge">${acctUnread}</span>` : ''}
+        </div>
+        ${customFolders.map(f => {
+          const label = f.display_name || f.name.split('/').pop();
+          return `<div class="nav-item nav-item-sub" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(label)}')">
+            <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
+          </div>`;
+        }).join('')}`;
+    }
+  } else {
+    // Single account: global Folders section (existing behaviour)
+    const subfolders = _allFolders.filter(f => !f.role && f.name.includes('/') && !f.name.startsWith('INBOX/'));
+    const topLevel   = _allFolders.filter(f => !f.role && !f.name.includes('/') && (f.message_count || 0) > 0);
+
+    const parents = {};
+    for (const f of subfolders) {
+      const parent = f.name.split('/')[0];
+      if (!parents[parent]) parents[parent] = [];
+      parents[parent].push(f);
+    }
+
+    if (topLevel.length > 0) {
+      html += '<div class="nav-divider"></div><div class="nav-section-label">Folders</div>';
+      for (const f of topLevel) {
+        const children = parents[f.name] || [];
+        const hasKids  = children.length > 0;
+        const sfKey    = `sf_${f.id}`;
+        html += `<div class="nav-item" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(f.display_name || f.name)}')">
+          <span class="nav-icon">&#128193;</span>${esc(f.display_name || f.name)}
+          ${hasKids ? `<span class="nav-expand" onclick="event.stopPropagation();_sfToggle('${sfKey}')">&#9660;</span>` : ''}
+        </div>
+        ${hasKids ? `<div id="${sfKey}" class="nav-subgroup" style="display:none">` + children.map(c => {
+          const label = c.display_name || c.name.split('/').pop();
+          return `<div class="nav-item nav-item-sub" data-module="f_${c.id}" onclick="navigateFolder(${c.id}, '${esc(label)}')">
+            <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
+          </div>`;
+        }).join('') + '</div>' : ''}`;
+      }
     }
   }
 
@@ -236,6 +280,16 @@ function navigateFolder(folderId, folderName) {
   document.getElementById('page-title').textContent = folderName;
   detClose();
   pageEmailsFolder(folderId, folderName);
+}
+
+function navigateAccountFolder(accountId, accountName, role) {
+  const key = `ai_${accountId}_${role}`;
+  _currentModule = key;
+  _setNavActive(key);
+  const titles = { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk' };
+  document.getElementById('page-title').textContent = `${accountName} — ${titles[role] || role}`;
+  detClose();
+  pageEmails(role, titles[role] || role, accountId);
 }
 
 function detClose() {

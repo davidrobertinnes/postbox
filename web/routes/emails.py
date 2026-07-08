@@ -123,7 +123,7 @@ def api_email(mid: int):
     # Lazy-fetch body if not yet stored
     if not msg["body_fetched"]:
         conn.close()
-        fetch_body(mid, account_id, uid, folder_name, db())
+        fetched_ok = fetch_body(mid, account_id, uid, folder_name, db())
         # Re-read
         conn = get_connection(db())
         row = conn.execute("""
@@ -137,6 +137,8 @@ def api_email(mid: int):
             WHERE m.id=?
         """, (mid,)).fetchone()
         msg = dict(row)
+        if not fetched_ok and not msg.get("body_text") and not msg.get("body_html"):
+            msg["_fetch_error"] = "Could not load message body — check account password in Accounts settings."
 
     attachments = dict_rows(conn.execute(
         "SELECT * FROM attachments WHERE message_id=?", (mid,)

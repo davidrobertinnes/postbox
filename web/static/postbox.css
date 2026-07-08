@@ -472,6 +472,50 @@ html, body {
   font-weight: 600;
 }
 
+/* AI actions panel */
+.ai-actions-box {
+  background: var(--amber-dim);
+  border: 1px solid var(--amber);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  display: none;
+}
+.ai-actions-box.loaded { display: block; }
+.ai-actions-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.ai-action-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(138,90,0,0.15);
+  color: var(--ink2);
+}
+.ai-action-item:last-child { border-bottom: none; }
+.ai-action-type {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.ai-action-type-task       { background: var(--accent-dim); color: var(--accent); }
+.ai-action-type-date       { background: var(--teal-dim);   color: var(--teal);   }
+.ai-action-type-commitment { background: var(--amber-dim);  color: var(--amber);  }
+.ai-action-desc { flex: 1; }
+.ai-action-due  { font-size: 11px; color: var(--ink3); flex-shrink: 0; }
+
 /* Email body iframe */
 .em-body-frame {
   width: 100%;

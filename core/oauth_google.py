@@ -1,18 +1,17 @@
 """
 Google OAuth2 — Gmail IMAP/SMTP via XOAUTH2.
 
-Requires BYOC (bring your own credentials): user registers a Google Cloud project,
-enables Gmail API, creates Desktop app credentials, and enters client_id + client_secret
-in the app's Google Integration settings.
-
-Note: projects in "Testing" status have refresh tokens that expire after 7 days.
-Workspace users can use "Internal" app type to avoid this.
+Desktop app credentials (client_secret is not truly secret for installed apps —
+this is expected and accepted by Google, same pattern as Thunderbird/Evolution).
 """
 import logging
 import os
 import time
 
 log = logging.getLogger(__name__)
+
+_GOOGLE_CLIENT_ID     = "877024810138-pq589jmumdgetkuiev2m0b31l61uelrv.apps.googleusercontent.com"
+_GOOGLE_CLIENT_SECRET = "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"
 
 _SCOPES       = ["https://mail.google.com/", "openid", "email"]
 _REDIRECT_URI = "http://localhost:5200/oauth/callback/google"
@@ -26,14 +25,7 @@ _pending: dict[str, dict] = {}
 
 
 def _client_config() -> dict:
-    from core.credentials import get_google_client_config
-    cfg = get_google_client_config()
-    if not cfg or not cfg.get("client_id") or not cfg.get("client_secret"):
-        raise ValueError(
-            "Google client ID and secret not configured — "
-            "add them in Accounts → Google Integration"
-        )
-    return cfg
+    return {"client_id": _GOOGLE_CLIENT_ID, "client_secret": _GOOGLE_CLIENT_SECRET}
 
 
 def start_flow(account_data: dict) -> str:

@@ -114,30 +114,9 @@ function _acctRender() {
         <div id="ms-client-id-status" style="margin-top:8px;font-size:12px;color:var(--ink3)">Loading…</div>
       </div>
     </div>
-    <div class="ai-settings-card" id="google-settings-card" style="margin-top:16px">
-      <div class="ai-settings-title">&#9670; Google Integration</div>
-      <div class="ai-settings-body">
-        <p style="font-size:13px;color:var(--ink2);margin-bottom:14px">
-          To connect Gmail accounts via <strong>Sign in with Google</strong>, create a Google Cloud project,
-          enable the Gmail API, and create OAuth credentials (type: <strong>Desktop app</strong>). Paste the
-          client ID and secret below. Redirect URI to allow:
-          <code style="font-size:11px">http://localhost:5200/oauth/callback/google</code>.
-          Note: projects in "Testing" status have refresh tokens that expire after 7 days;
-          Google Workspace users can set app type to "Internal" to avoid this.
-        </p>
-        <label class="form-label">Google Client ID</label>
-        <input type="text" id="google-client-id-input" class="form-control" placeholder="xxxxxxxx.apps.googleusercontent.com" style="font-family:monospace;font-size:12px;margin-bottom:8px">
-        <label class="form-label">Google Client Secret</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="password" id="google-client-secret-input" class="form-control" placeholder="GOCSPX-…" style="flex:1;font-family:monospace;font-size:12px">
-          <button class="btn btn-primary btn-sm" onclick="_acctSaveGoogleClient()">Save</button>
-        </div>
-        <div id="google-client-status" style="margin-top:8px;font-size:12px;color:var(--ink3)">Loading…</div>
-      </div>
-    </div>`;
+`;
   _acctLoadAIKeyStatus();
   _acctLoadMSClientIdStatus();
-  _acctLoadGoogleClientStatus();
 }
 
 function _acctAddWizard() {
@@ -471,39 +450,6 @@ async function _acctSaveMSClientId() {
   }
 }
 
-async function _acctLoadGoogleClientStatus() {
-  const el = document.getElementById('google-client-status');
-  if (!el) return;
-  try {
-    const r = await apiFetch('/api/settings/google_client');
-    if (r.set) {
-      el.innerHTML = `<span style="color:var(--green)">&#10003; Client credentials saved (${esc(r.masked)}…)</span>`;
-    } else {
-      el.textContent = 'No credentials saved.';
-    }
-  } catch(e) {
-    el.textContent = '';
-  }
-}
-
-async function _acctSaveGoogleClient() {
-  const cid    = (document.getElementById('google-client-id-input')?.value || '').trim();
-  const secret = (document.getElementById('google-client-secret-input')?.value || '').trim();
-  if (!cid || !secret) { toast('Both client ID and secret are required', 'err'); return; }
-  const r = await fetch('/api/settings/google_client', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: cid, client_secret: secret }),
-  }).then(r => r.json());
-  if (r.ok) {
-    toast('Google credentials saved');
-    document.getElementById('google-client-id-input').value = '';
-    document.getElementById('google-client-secret-input').value = '';
-    _acctLoadGoogleClientStatus();
-  } else {
-    toast(r.error || 'Save failed', 'err');
-  }
-}
 
 async function _acctStartGoogleOAuth() {
   const name = (document.getElementById('af-oauth-name')?.value || '').trim() || 'Gmail';

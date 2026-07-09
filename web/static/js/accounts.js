@@ -13,8 +13,13 @@ const _ACCT_PRESETS = {
     smtp_host: 'smtp.gmail.com', smtp_port: 587, smtp_ssl: 0,
     hint: 'Use an App Password — Google Account → Security → 2-Step Verification → App passwords',
   },
+  outlook_oauth: {
+    name: 'Outlook (Sign in)',
+    oauth: true,
+    hint: '',
+  },
   outlook: {
-    name: 'Outlook / Microsoft 365',
+    name: 'Outlook (app password)',
     imap_host: 'outlook.office365.com', imap_port: 993, imap_ssl: 1,
     smtp_host: 'smtp.office365.com', smtp_port: 587, smtp_ssl: 0,
     hint: 'Use an App Password via Microsoft Account → Security → Advanced security options',
@@ -85,8 +90,27 @@ function _acctRender() {
         </div>
         <div id="ai-key-status" style="margin-top:8px;font-size:12px;color:var(--ink3)">Loading…</div>
       </div>
+    </div>
+    <div class="ai-settings-card" id="ms-settings-card" style="margin-top:16px">
+      <div class="ai-settings-title">&#9729; Microsoft Integration</div>
+      <div class="ai-settings-body">
+        <p style="font-size:13px;color:var(--ink2);margin-bottom:14px">
+          To connect Outlook accounts via <strong>Sign in with Microsoft</strong>, register a free Azure app and paste
+          your Application (client) ID below. In Azure portal: App registrations → New registration →
+          redirect URI <code style="font-size:11px">http://localhost:5200/oauth/callback/microsoft</code> (Web) →
+          API permissions: add <code style="font-size:11px">IMAP.AccessAsUser.All</code> and <code style="font-size:11px">SMTP.Send</code> →
+          Authentication → enable "Allow public client flows".
+        </p>
+        <label class="form-label">Azure Application (Client) ID</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="ms-client-id-input" class="form-control" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="flex:1;font-family:monospace;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="_acctSaveMSClientId()">Save</button>
+        </div>
+        <div id="ms-client-id-status" style="margin-top:8px;font-size:12px;color:var(--ink3)">Loading…</div>
+      </div>
     </div>`;
   _acctLoadAIKeyStatus();
+  _acctLoadMSClientIdStatus();
 }
 
 function _acctAddWizard() {
@@ -120,6 +144,27 @@ function _acctSelectPreset(key) {
 function _acctRenderForm(preset) {
   const container = document.getElementById('acct-form-container');
   if (!container) return;
+
+  // OAuth flow — no IMAP fields needed
+  if (preset.oauth) {
+    container.innerHTML = `
+      <div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--amber)">
+        You'll be redirected to Microsoft to sign in. Requires an Azure app client ID configured in
+        Microsoft Integration settings below.
+      </div>
+      <div class="form-row">
+        <label class="form-label">Account display name</label>
+        <input class="form-input" id="af-oauth-name" type="text" placeholder="e.g. Work Outlook" value="Outlook">
+      </div>`;
+    const foot = document.getElementById('det-foot');
+    foot.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary btn-sm';
+    btn.textContent = 'Connect with Microsoft →';
+    btn.onclick = _acctStartMicrosoftOAuth;
+    foot.appendChild(btn);
+    return;
+  }
 
   container.innerHTML = `
     ${preset.hint ? `<div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--amber)">${esc(preset.hint)}</div>` : ''}
@@ -269,6 +314,7 @@ async function _acctSave() {
 function _acctEdit(id) {
   const acct = _acctList.find(a => a.id === id);
   if (!acct) return;
+  const isOAuth = acct.auth_type === 'oauth_microsoft';
   detOpen(`Edit — ${acct.name}`);
 
   document.getElementById('det-body').innerHTML = `
@@ -278,12 +324,15 @@ function _acctEdit(id) {
     </div>
     <div class="form-row">
       <label class="form-label">Email address</label>
-      <input class="form-input" id="af-edit-email" type="email" value="${esc(acct.email)}">
+      <input class="form-input" id="af-edit-email" type="email" value="${esc(acct.email)}"${isOAuth ? ' readonly style="opacity:0.6"' : ''}>
     </div>
-    <div class="form-row">
-      <label class="form-label">New password (leave blank to keep current)</label>
-      <input class="form-input" id="af-edit-password" type="password" placeholder="••••••••••••">
-    </div>`;
+    ${isOAuth
+      ? `<div style="font-size:12px;color:var(--ink3);padding:8px 0 4px">Connected via Microsoft OAuth — no password needed.</div>`
+      : `<div class="form-row">
+           <label class="form-label">New password (leave blank to keep current)</label>
+           <input class="form-input" id="af-edit-password" type="password" placeholder="••••••••••••">
+         </div>`
+    }`;
 
   const foot = document.getElementById('det-foot');
   foot.innerHTML = '';
@@ -296,7 +345,7 @@ function _acctEdit(id) {
       name: document.getElementById('af-edit-name')?.value.trim() || '',
       email: document.getElementById('af-edit-email')?.value.trim() || '',
     };
-    const pw = document.getElementById('af-edit-password')?.value || '';
+    const pw = isOAuth ? '' : (document.getElementById('af-edit-password')?.value || '');
     if (pw) payload.password = pw;
     const r = await fetch(`/api/accounts/${id}`, {
       method: 'PUT',
@@ -353,4 +402,51 @@ async function _acctSaveAIKey() {
   } else {
     toast(r.error || 'Save failed', 'err');
   }
+}
+
+async function _acctLoadMSClientIdStatus() {
+  const el = document.getElementById('ms-client-id-status');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/settings/ms_client_id');
+    if (r.set) {
+      el.innerHTML = `<span style="color:var(--green)">&#10003; Client ID saved (${esc(r.masked)})</span>`;
+    } else {
+      el.textContent = 'No client ID saved.';
+    }
+  } catch(e) {
+    el.textContent = '';
+  }
+}
+
+async function _acctSaveMSClientId() {
+  const input = document.getElementById('ms-client-id-input');
+  const client_id = (input?.value || '').trim();
+  if (!client_id) { toast('Enter a client ID', 'err'); return; }
+  const r = await fetch('/api/settings/ms_client_id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id }),
+  }).then(r => r.json());
+  if (r.ok) {
+    toast('Client ID saved');
+    input.value = '';
+    _acctLoadMSClientIdStatus();
+  } else {
+    toast(r.error || 'Save failed', 'err');
+  }
+}
+
+async function _acctStartMicrosoftOAuth() {
+  const name = (document.getElementById('af-oauth-name')?.value || '').trim() || 'Outlook';
+  const r = await fetch('/api/oauth/microsoft/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  }).then(r => r.json());
+  if (!r.ok) {
+    toast(r.error || 'Could not start sign-in', 'err');
+    return;
+  }
+  window.location.href = r.data.auth_url;
 }

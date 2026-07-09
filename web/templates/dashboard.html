@@ -354,7 +354,20 @@ async function _refreshBadge() {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 _loadFolders();
-navigate('inbox');
+(function() {
+  const p = new URLSearchParams(window.location.search);
+  if (p.has('oauth_success')) {
+    navigate('accounts');
+    window.history.replaceState({}, '', '/');
+    setTimeout(() => toast(p.get('oauth_success') || 'Account connected'), 500);
+  } else if (p.has('oauth_error')) {
+    navigate('accounts');
+    window.history.replaceState({}, '', '/');
+    setTimeout(() => toast(p.get('oauth_error') || 'Sign-in failed', 'err'), 500);
+  } else {
+    navigate('inbox');
+  }
+})();
 setInterval(_refreshBadge, 30000);
 _refreshBadge();
 </script>

@@ -26,9 +26,20 @@ def send_message(
     Returns (ok, message).
     account dict needs: smtp_host, smtp_port, smtp_ssl, username, id
     """
-    password = get_password(account["id"])
-    if not password:
-        return False, "No password stored for this account"
+    auth_type = account.get("auth_type", "password")
+    password = None
+    access_token = None
+
+    if auth_type == "oauth_microsoft":
+        try:
+            from core.oauth_microsoft import get_valid_access_token, xoauth2_string
+            access_token = get_valid_access_token(account["id"], account.get("email", ""))
+        except Exception as e:
+            return False, f"OAuth token error: {e}"
+    else:
+        password = get_password(account["id"])
+        if not password:
+            return False, "No password stored for this account"
 
     to_list = [to] if isinstance(to, str) else to
     cc_list = [cc] if isinstance(cc, str) else (cc or [])
@@ -53,21 +64,31 @@ def send_message(
         msg.attach(MIMEText(body_html, "html", "utf-8"))
 
     try:
-        port = int(account.get("smtp_port", 587))
-        host = account["smtp_host"]
+        port    = int(account.get("smtp_port", 587))
+        host    = account["smtp_host"]
         use_ssl = bool(account.get("smtp_ssl", 0))
         username = account.get("username") or account["email"]
+
+        def _smtp_auth(s):
+            if access_token:
+                encoded = xoauth2_string(account["email"], access_token)
+                code, resp = s.docmd("AUTH", f"XOAUTH2 {encoded}")
+                if code != 235:
+                    raise smtplib.SMTPAuthenticationError(code, resp)
+            else:
+                s.login(username, password)
 
         if use_ssl:
             ctx = ssl.create_default_context()
             with smtplib.SMTP_SSL(host, port, context=ctx, timeout=15) as s:
-                s.login(username, password)
+                _smtp_auth(s)
                 s.sendmail(account["email"], all_rcpt, msg.as_bytes())
         else:
             with smtplib.SMTP(host, port, timeout=15) as s:
                 s.ehlo()
                 s.starttls()
-                s.login(username, password)
+                s.ehlo()
+                _smtp_auth(s)
                 s.sendmail(account["email"], all_rcpt, msg.as_bytes())
 
         return True, "Sent"

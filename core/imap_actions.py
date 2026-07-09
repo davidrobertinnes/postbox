@@ -28,11 +28,14 @@ def _imap_connect(account_id: int, db_path: str):
     conn.close()
     if not row:
         return None
-    password = get_password(account_id)
-    if not password:
-        return None
+    account = dict(row)
+    password = None
+    if account.get("auth_type") != "oauth_microsoft":
+        password = get_password(account_id)
+        if not password:
+            return None
     try:
-        return _make_client(dict(row), password)
+        return _make_client(account, password)
     except Exception as e:
         log.error("imap connect account=%d: %s", account_id, e)
         return None

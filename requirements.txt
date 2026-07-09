@@ -4,3 +4,4 @@ anthropic>=0.30
 keyring>=25.0
 bleach>=6.0
 beautifulsoup4>=4.12
+msal>=1.29

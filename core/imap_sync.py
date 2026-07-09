@@ -23,8 +23,8 @@ _stop_events: dict[int, threading.Event] = {}
 
 # ── Connection helpers ─────────────────────────────────────────────────────────
 
-def _make_client(account: dict, password: str):
-    """Create and return a logged-in IMAPClient."""
+def _make_client(account: dict, password: str | None = None):
+    """Create and return a logged-in IMAPClient. Handles password and OAuth."""
     from imapclient import IMAPClient
     ssl = bool(account.get("imap_ssl", 1))
     client = IMAPClient(
@@ -33,7 +33,14 @@ def _make_client(account: dict, password: str):
         ssl=ssl,
         timeout=15,
     )
-    client.login(account["username"], password)
+    if account.get("auth_type") == "oauth_microsoft":
+        from core.oauth_microsoft import get_valid_access_token, xoauth2_string
+        token = get_valid_access_token(account["id"], account.get("email", ""))
+        username = account.get("username") or account.get("email", "")
+        # IMAPClient.oauth2_login uses the XOAUTH2 SASL mechanism
+        client.oauth2_login(username, token)
+    else:
+        client.login(account["username"], password)
     return client
 
 
@@ -94,10 +101,12 @@ def sync_folders(account_id: int, db_path: str) -> None:
         conn.close()
         return
     account = dict(row)
-    password = get_password(account_id)
-    if not password:
-        conn.close()
-        return
+    password = None
+    if account.get("auth_type") != "oauth_microsoft":
+        password = get_password(account_id)
+        if not password:
+            conn.close()
+            return
 
     try:
         client = _make_client(account, password)
@@ -136,10 +145,12 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
         conn.close()
         return 0
     account = dict(row)
-    password = get_password(account_id)
-    if not password:
-        conn.close()
-        return 0
+    password = None
+    if account.get("auth_type") != "oauth_microsoft":
+        password = get_password(account_id)
+        if not password:
+            conn.close()
+            return 0
 
     folder_row = conn.execute(
         "SELECT * FROM folders WHERE account_id=? AND (role='inbox' OR LOWER(name)='inbox') LIMIT 1",
@@ -206,10 +217,12 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
         conn.close()
         return 0
     account = dict(row)
-    password = get_password(account_id)
-    if not password:
-        conn.close()
-        return 0
+    password = None
+    if account.get("auth_type") != "oauth_microsoft":
+        password = get_password(account_id)
+        if not password:
+            conn.close()
+            return 0
 
     folders = conn.execute(
         "SELECT * FROM folders WHERE account_id=?", (account_id,)
@@ -390,7 +403,9 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
         conn.close()
         return False
     account = dict(row)
-    password = get_password(account_id)
+    password = None
+    if account.get("auth_type") != "oauth_microsoft":
+        password = get_password(account_id)
 
     try:
         client = _make_client(account, password)
@@ -482,10 +497,13 @@ def _sync_loop_idle(account_id: int, db_path: str, stop: threading.Event) -> Non
             if not acct_row:
                 break
 
-            password = get_password(account_id)
-            if not password:
-                stop.wait(60)
-                continue
+            auth_type = acct_row["auth_type"] or "password"
+            password = None
+            if auth_type != "oauth_microsoft":
+                password = get_password(account_id)
+                if not password:
+                    stop.wait(60)
+                    continue
 
             client = _make_client(dict(acct_row), password)
             caps = client.capabilities()

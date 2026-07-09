@@ -4,7 +4,7 @@ Email account CRUD + IMAP connection testing.
 from flask import Blueprint, request
 from web.shared import db, ok, err, dict_rows
 from core.database import get_connection
-from core.credentials import store_password, delete_password
+from core.credentials import store_password, delete_password, delete_oauth_tokens
 from core.imap_sync import test_connection, sync_folders, sync_all_folders_messages, start_sync
 
 bp = Blueprint("accounts", __name__)
@@ -176,9 +176,29 @@ def api_account_delete(aid: int):
     stop_sync(aid)
     conn = get_connection(db())
     delete_password(aid)
+    delete_oauth_tokens(aid)
     conn.execute("DELETE FROM accounts WHERE id=?", (aid,))
     conn.commit()
     conn.close()
+    return ok()
+
+
+@bp.route("/api/settings/ms_client_id", methods=["GET"])
+def api_ms_client_id_get():
+    from core.credentials import get_ms_client_id
+    cid = get_ms_client_id()
+    masked = (cid[:8] + "…" + cid[-4:]) if cid and len(cid) > 12 else (cid or "")
+    return ok({"set": bool(cid), "masked": masked})
+
+
+@bp.route("/api/settings/ms_client_id", methods=["POST"])
+def api_ms_client_id_set():
+    from core.credentials import store_ms_client_id
+    data = request.get_json() or {}
+    cid = (data.get("client_id") or "").strip()
+    if not cid:
+        return err("client_id required")
+    store_ms_client_id(cid)
     return ok()
 
 

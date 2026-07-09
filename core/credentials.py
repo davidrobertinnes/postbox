@@ -9,9 +9,12 @@ except ImportError:
     _keyring = None
     _KEYRING_OK = False
 
-_SERVICE    = "postbox"
-_AI_SERVICE = "postbox_ai"
-_AI_USER    = "anthropic_api_key"
+_SERVICE      = "postbox"
+_AI_SERVICE   = "postbox_ai"
+_AI_USER      = "anthropic_api_key"
+_OAUTH_SERVICE = "postbox_oauth"
+_MS_SERVICE    = "postbox_ms"
+_MS_CLIENT_KEY = "client_id"
 
 
 def store_password(account_id: int, password: str) -> None:
@@ -67,6 +70,63 @@ def get_api_key() -> str | None:
     if _KEYRING_OK:
         return _keyring.get_password(_AI_SERVICE, _AI_USER)
     return _load_fallback().get("__api_key__")
+
+
+def store_ms_client_id(client_id: str) -> None:
+    if _KEYRING_OK:
+        _keyring.set_password(_MS_SERVICE, _MS_CLIENT_KEY, client_id)
+    else:
+        import json
+        data = _load_fallback()
+        data["__ms_client_id__"] = client_id
+        with open(_fallback_path(), "w") as f:
+            json.dump(data, f)
+
+
+def get_ms_client_id() -> str | None:
+    if _KEYRING_OK:
+        return _keyring.get_password(_MS_SERVICE, _MS_CLIENT_KEY)
+    return _load_fallback().get("__ms_client_id__")
+
+
+def store_oauth_tokens(account_id: int, tokens: dict) -> None:
+    import json
+    value = json.dumps(tokens)
+    if _KEYRING_OK:
+        _keyring.set_password(_OAUTH_SERVICE, str(account_id), value)
+    else:
+        data = _load_fallback()
+        data[f"__oauth_{account_id}__"] = value
+        with open(_fallback_path(), "w") as f:
+            json.dump(data, f)
+
+
+def get_oauth_tokens(account_id: int) -> dict | None:
+    import json
+    if _KEYRING_OK:
+        val = _keyring.get_password(_OAUTH_SERVICE, str(account_id))
+    else:
+        val = _load_fallback().get(f"__oauth_{account_id}__")
+    if not val:
+        return None
+    try:
+        return json.loads(val)
+    except Exception:
+        return None
+
+
+def delete_oauth_tokens(account_id: int) -> None:
+    if _KEYRING_OK:
+        try:
+            _keyring.delete_password(_OAUTH_SERVICE, str(account_id))
+        except Exception:
+            pass
+    else:
+        import json
+        data = _load_fallback()
+        data.pop(f"__oauth_{account_id}__", None)
+        with open(_fallback_path(), "w") as f:
+            json.dump(data, f)
 
 
 def _fallback_path() -> str:

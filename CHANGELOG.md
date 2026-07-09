@@ -36,3 +36,12 @@
 - core/imap_sync.py: Replaced 60s poll loop with IMAP IDLE; `_idle_watch()` enters IDLE, polls `idle_check(timeout=1)` so stop event interrupts within 1s, returns True on EXISTS/RECENT push; `_sync_loop_idle()` IDLEs on inbox for real-time new mail, reconnects every 29 min before server's 30-min timeout, full all-folder sync every 10 min; automatic 60s polling fallback for servers without IDLE capability; confirmed working against Internode (Dovecot)
 - web/static/js/emails.js: HTML email iframe sandbox now includes `allow-popups` so links open in new tabs
 - web/static/js/compose.js, emails.js: `composeNew()` accepts optional `accountId`; Compose button passes current account filter so new mail defaults to the active account when filtered to a single account
+- core/oauth_microsoft.py, web/routes/oauth.py: Microsoft OAuth2 (XOAUTH2) — MSAL auth code flow, token storage in keyring, `/oauth/callback/microsoft` creates account and kicks off sync; no app password needed
+- core/oauth_google.py, web/routes/oauth.py: Google OAuth2 (XOAUTH2) — google-auth-oauthlib Desktop app flow, bundled credentials (Thunderbird pattern), `/oauth/callback/google`; scope fix for `email` → full URI
+- core/imap_sync.py, core/imap_actions.py: `_OAUTH_AUTH_TYPES` set; all sync/action functions skip password lookup for OAuth accounts; `_make_client` dispatches to `oauth2_login()` for both providers
+- core/smtp_send.py: XOAUTH2 `AUTH` command for OAuth accounts (both providers); password path unchanged
+- core/credentials.py: OAuth token storage (`store_oauth_tokens`/`get_oauth_tokens`/`delete_oauth_tokens`); MS client ID storage; Google client config storage (unused now — credentials bundled)
+- web/routes/accounts.py: MS client ID GET/POST settings; delete route cleans up OAuth tokens
+- web/static/js/accounts.js: `gmail_oauth` and `outlook_oauth` presets in provider grid; OAuth form branch in `_acctRenderForm`; `_acctStartGoogleOAuth` / `_acctStartMicrosoftOAuth`; edit panel handles OAuth accounts (no password field); MS Integration settings card
+- web/templates/dashboard.html: detect `?oauth_success` / `?oauth_error` on load, show toast and navigate to accounts
+- requirements.txt: added `msal>=1.29`, `google-auth-oauthlib>=1.2`, `google-auth>=2.29`

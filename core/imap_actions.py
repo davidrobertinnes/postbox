@@ -8,7 +8,7 @@ import logging
 
 from core.database import get_connection
 from core.credentials import get_password
-from core.imap_sync import _make_client
+from core.imap_sync import _make_client, _OAUTH_AUTH_TYPES
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def _imap_connect(account_id: int, db_path: str):
         return None
     account = dict(row)
     password = None
-    if account.get("auth_type") != "oauth_microsoft":
+    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
         password = get_password(account_id)
         if not password:
             return None

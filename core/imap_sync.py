@@ -20,6 +20,8 @@ log = logging.getLogger(__name__)
 _sync_threads: dict[int, threading.Thread] = {}
 _stop_events: dict[int, threading.Event] = {}
 
+_OAUTH_AUTH_TYPES = {"oauth_microsoft", "oauth_google"}
+
 
 # ── Connection helpers ─────────────────────────────────────────────────────────
 
@@ -33,12 +35,15 @@ def _make_client(account: dict, password: str | None = None):
         ssl=ssl,
         timeout=15,
     )
-    if account.get("auth_type") == "oauth_microsoft":
-        from core.oauth_microsoft import get_valid_access_token, xoauth2_string
+    auth_type = account.get("auth_type", "password")
+    if auth_type == "oauth_microsoft":
+        from core.oauth_microsoft import get_valid_access_token
         token = get_valid_access_token(account["id"], account.get("email", ""))
-        username = account.get("username") or account.get("email", "")
-        # IMAPClient.oauth2_login uses the XOAUTH2 SASL mechanism
-        client.oauth2_login(username, token)
+        client.oauth2_login(account.get("username") or account.get("email", ""), token)
+    elif auth_type == "oauth_google":
+        from core.oauth_google import get_valid_access_token
+        token = get_valid_access_token(account["id"], account.get("email", ""))
+        client.oauth2_login(account.get("username") or account.get("email", ""), token)
     else:
         client.login(account["username"], password)
     return client
@@ -102,7 +107,7 @@ def sync_folders(account_id: int, db_path: str) -> None:
         return
     account = dict(row)
     password = None
-    if account.get("auth_type") != "oauth_microsoft":
+    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
         password = get_password(account_id)
         if not password:
             conn.close()
@@ -146,7 +151,7 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
         return 0
     account = dict(row)
     password = None
-    if account.get("auth_type") != "oauth_microsoft":
+    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
         password = get_password(account_id)
         if not password:
             conn.close()
@@ -218,7 +223,7 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
         return 0
     account = dict(row)
     password = None
-    if account.get("auth_type") != "oauth_microsoft":
+    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
         password = get_password(account_id)
         if not password:
             conn.close()
@@ -404,7 +409,7 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
         return False
     account = dict(row)
     password = None
-    if account.get("auth_type") != "oauth_microsoft":
+    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
         password = get_password(account_id)
 
     try:
@@ -499,7 +504,7 @@ def _sync_loop_idle(account_id: int, db_path: str, stop: threading.Event) -> Non
 
             auth_type = acct_row["auth_type"] or "password"
             password = None
-            if auth_type != "oauth_microsoft":
+            if auth_type not in _OAUTH_AUTH_TYPES:
                 password = get_password(account_id)
                 if not password:
                     stop.wait(60)

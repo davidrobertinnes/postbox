@@ -7,15 +7,20 @@ const _ACCT_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3ae
 
 // Provider presets (IMAP/SMTP defaults)
 const _ACCT_PRESETS = {
+  gmail_oauth: {
+    name: 'Gmail (Sign in)',
+    oauth: 'google',
+    hint: '',
+  },
   gmail: {
-    name: 'Gmail',
+    name: 'Gmail (app password)',
     imap_host: 'imap.gmail.com', imap_port: 993, imap_ssl: 1,
     smtp_host: 'smtp.gmail.com', smtp_port: 587, smtp_ssl: 0,
     hint: 'Use an App Password — Google Account → Security → 2-Step Verification → App passwords',
   },
   outlook_oauth: {
     name: 'Outlook (Sign in)',
-    oauth: true,
+    oauth: 'microsoft',
     hint: '',
   },
   outlook: {
@@ -108,9 +113,31 @@ function _acctRender() {
         </div>
         <div id="ms-client-id-status" style="margin-top:8px;font-size:12px;color:var(--ink3)">Loading…</div>
       </div>
+    </div>
+    <div class="ai-settings-card" id="google-settings-card" style="margin-top:16px">
+      <div class="ai-settings-title">&#9670; Google Integration</div>
+      <div class="ai-settings-body">
+        <p style="font-size:13px;color:var(--ink2);margin-bottom:14px">
+          To connect Gmail accounts via <strong>Sign in with Google</strong>, create a Google Cloud project,
+          enable the Gmail API, and create OAuth credentials (type: <strong>Desktop app</strong>). Paste the
+          client ID and secret below. Redirect URI to allow:
+          <code style="font-size:11px">http://localhost:5200/oauth/callback/google</code>.
+          Note: projects in "Testing" status have refresh tokens that expire after 7 days;
+          Google Workspace users can set app type to "Internal" to avoid this.
+        </p>
+        <label class="form-label">Google Client ID</label>
+        <input type="text" id="google-client-id-input" class="form-control" placeholder="xxxxxxxx.apps.googleusercontent.com" style="font-family:monospace;font-size:12px;margin-bottom:8px">
+        <label class="form-label">Google Client Secret</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="password" id="google-client-secret-input" class="form-control" placeholder="GOCSPX-…" style="flex:1;font-family:monospace;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="_acctSaveGoogleClient()">Save</button>
+        </div>
+        <div id="google-client-status" style="margin-top:8px;font-size:12px;color:var(--ink3)">Loading…</div>
+      </div>
     </div>`;
   _acctLoadAIKeyStatus();
   _acctLoadMSClientIdStatus();
+  _acctLoadGoogleClientStatus();
 }
 
 function _acctAddWizard() {
@@ -147,21 +174,28 @@ function _acctRenderForm(preset) {
 
   // OAuth flow — no IMAP fields needed
   if (preset.oauth) {
+    const isMicrosoft = preset.oauth === 'microsoft';
+    const providerName = isMicrosoft ? 'Microsoft' : 'Google';
+    const settingsNote = isMicrosoft
+      ? 'Requires an Azure app client ID configured in Microsoft Integration settings below.'
+      : 'Requires a Google Cloud client ID and secret configured in Google Integration settings below.';
+    const defaultName = isMicrosoft ? 'Outlook' : 'Gmail';
+    const placeholder = isMicrosoft ? 'e.g. Work Outlook' : 'e.g. Personal Gmail';
+
     container.innerHTML = `
       <div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--amber)">
-        You'll be redirected to Microsoft to sign in. Requires an Azure app client ID configured in
-        Microsoft Integration settings below.
+        You'll be redirected to ${providerName} to sign in. ${settingsNote}
       </div>
       <div class="form-row">
         <label class="form-label">Account display name</label>
-        <input class="form-input" id="af-oauth-name" type="text" placeholder="e.g. Work Outlook" value="Outlook">
+        <input class="form-input" id="af-oauth-name" type="text" placeholder="${placeholder}" value="${defaultName}">
       </div>`;
     const foot = document.getElementById('det-foot');
     foot.innerHTML = '';
     const btn = document.createElement('button');
     btn.className = 'btn btn-primary btn-sm';
-    btn.textContent = 'Connect with Microsoft →';
-    btn.onclick = _acctStartMicrosoftOAuth;
+    btn.textContent = `Connect with ${providerName} →`;
+    btn.onclick = isMicrosoft ? _acctStartMicrosoftOAuth : _acctStartGoogleOAuth;
     foot.appendChild(btn);
     return;
   }
@@ -314,7 +348,7 @@ async function _acctSave() {
 function _acctEdit(id) {
   const acct = _acctList.find(a => a.id === id);
   if (!acct) return;
-  const isOAuth = acct.auth_type === 'oauth_microsoft';
+  const isOAuth = acct.auth_type === 'oauth_microsoft' || acct.auth_type === 'oauth_google';
   detOpen(`Edit — ${acct.name}`);
 
   document.getElementById('det-body').innerHTML = `
@@ -435,6 +469,54 @@ async function _acctSaveMSClientId() {
   } else {
     toast(r.error || 'Save failed', 'err');
   }
+}
+
+async function _acctLoadGoogleClientStatus() {
+  const el = document.getElementById('google-client-status');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/settings/google_client');
+    if (r.set) {
+      el.innerHTML = `<span style="color:var(--green)">&#10003; Client credentials saved (${esc(r.masked)}…)</span>`;
+    } else {
+      el.textContent = 'No credentials saved.';
+    }
+  } catch(e) {
+    el.textContent = '';
+  }
+}
+
+async function _acctSaveGoogleClient() {
+  const cid    = (document.getElementById('google-client-id-input')?.value || '').trim();
+  const secret = (document.getElementById('google-client-secret-input')?.value || '').trim();
+  if (!cid || !secret) { toast('Both client ID and secret are required', 'err'); return; }
+  const r = await fetch('/api/settings/google_client', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: cid, client_secret: secret }),
+  }).then(r => r.json());
+  if (r.ok) {
+    toast('Google credentials saved');
+    document.getElementById('google-client-id-input').value = '';
+    document.getElementById('google-client-secret-input').value = '';
+    _acctLoadGoogleClientStatus();
+  } else {
+    toast(r.error || 'Save failed', 'err');
+  }
+}
+
+async function _acctStartGoogleOAuth() {
+  const name = (document.getElementById('af-oauth-name')?.value || '').trim() || 'Gmail';
+  const r = await fetch('/api/oauth/google/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  }).then(r => r.json());
+  if (!r.ok) {
+    toast(r.error || 'Could not start Google sign-in', 'err');
+    return;
+  }
+  window.location.href = r.data.auth_url;
 }
 
 async function _acctStartMicrosoftOAuth() {

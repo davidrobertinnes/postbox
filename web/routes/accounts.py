@@ -4,7 +4,10 @@ Email account CRUD + IMAP connection testing.
 from flask import Blueprint, request
 from web.shared import db, ok, err, dict_rows
 from core.database import get_connection
-from core.credentials import store_password, delete_password, delete_oauth_tokens
+from core.credentials import (
+    store_password, delete_password, delete_oauth_tokens,
+    get_google_client_config, store_google_client_config,
+)
 from core.imap_sync import test_connection, sync_folders, sync_all_folders_messages, start_sync
 
 bp = Blueprint("accounts", __name__)
@@ -199,6 +202,25 @@ def api_ms_client_id_set():
     if not cid:
         return err("client_id required")
     store_ms_client_id(cid)
+    return ok()
+
+
+@bp.route("/api/settings/google_client", methods=["GET"])
+def api_google_client_get():
+    cfg = get_google_client_config()
+    cid = cfg.get("client_id", "") if cfg else ""
+    masked = (cid[:8] + "…" + cid[-4:]) if cid and len(cid) > 12 else cid
+    return ok({"set": bool(cid), "masked": masked})
+
+
+@bp.route("/api/settings/google_client", methods=["POST"])
+def api_google_client_set():
+    data = request.get_json() or {}
+    cid = (data.get("client_id") or "").strip()
+    secret = (data.get("client_secret") or "").strip()
+    if not cid or not secret:
+        return err("client_id and client_secret required")
+    store_google_client_config(cid, secret)
     return ok()
 
 

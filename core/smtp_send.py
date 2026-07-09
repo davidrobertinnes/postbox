@@ -32,7 +32,13 @@ def send_message(
 
     if auth_type == "oauth_microsoft":
         try:
-            from core.oauth_microsoft import get_valid_access_token, xoauth2_string
+            from core.oauth_microsoft import get_valid_access_token
+            access_token = get_valid_access_token(account["id"], account.get("email", ""))
+        except Exception as e:
+            return False, f"OAuth token error: {e}"
+    elif auth_type == "oauth_google":
+        try:
+            from core.oauth_google import get_valid_access_token
             access_token = get_valid_access_token(account["id"], account.get("email", ""))
         except Exception as e:
             return False, f"OAuth token error: {e}"
@@ -71,7 +77,9 @@ def send_message(
 
         def _smtp_auth(s):
             if access_token:
-                encoded = xoauth2_string(account["email"], access_token)
+                import base64
+                raw = f"user={account['email']}\x01auth=Bearer {access_token}\x01\x01"
+                encoded = base64.b64encode(raw.encode()).decode()
                 code, resp = s.docmd("AUTH", f"XOAUTH2 {encoded}")
                 if code != 235:
                     raise smtplib.SMTPAuthenticationError(code, resp)

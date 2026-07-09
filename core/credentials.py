@@ -9,12 +9,14 @@ except ImportError:
     _keyring = None
     _KEYRING_OK = False
 
-_SERVICE      = "postbox"
-_AI_SERVICE   = "postbox_ai"
-_AI_USER      = "anthropic_api_key"
-_OAUTH_SERVICE = "postbox_oauth"
-_MS_SERVICE    = "postbox_ms"
-_MS_CLIENT_KEY = "client_id"
+_SERVICE         = "postbox"
+_AI_SERVICE      = "postbox_ai"
+_AI_USER         = "anthropic_api_key"
+_OAUTH_SERVICE   = "postbox_oauth"
+_MS_SERVICE      = "postbox_ms"
+_MS_CLIENT_KEY   = "client_id"
+_GOOGLE_CFG_SVC  = "postbox_google_cfg"
+_GOOGLE_CFG_KEY  = "config"
 
 
 def store_password(account_id: int, password: str) -> None:
@@ -87,6 +89,32 @@ def get_ms_client_id() -> str | None:
     if _KEYRING_OK:
         return _keyring.get_password(_MS_SERVICE, _MS_CLIENT_KEY)
     return _load_fallback().get("__ms_client_id__")
+
+
+def store_google_client_config(client_id: str, client_secret: str) -> None:
+    import json
+    value = json.dumps({"client_id": client_id, "client_secret": client_secret})
+    if _KEYRING_OK:
+        _keyring.set_password(_GOOGLE_CFG_SVC, _GOOGLE_CFG_KEY, value)
+    else:
+        data = _load_fallback()
+        data["__google_cfg__"] = value
+        with open(_fallback_path(), "w") as f:
+            json.dump(data, f)
+
+
+def get_google_client_config() -> dict | None:
+    import json
+    if _KEYRING_OK:
+        val = _keyring.get_password(_GOOGLE_CFG_SVC, _GOOGLE_CFG_KEY)
+    else:
+        val = _load_fallback().get("__google_cfg__")
+    if not val:
+        return None
+    try:
+        return json.loads(val)
+    except Exception:
+        return None
 
 
 def store_oauth_tokens(account_id: int, tokens: dict) -> None:

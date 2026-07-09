@@ -145,19 +145,6 @@ def api_email(mid: int):
     ).fetchall())
     msg["attachments"] = attachments
 
-    # Update local read flag (IMAP server write-back triggered separately by client)
-    if "Seen" not in (msg.get("flags") or ""):
-        import json as _json
-        flags = _json.loads(msg.get("flags") or "[]")
-        if "\\Seen" not in flags:
-            flags.append("\\Seen")
-            conn.execute("UPDATE messages SET flags=? WHERE id=?", (_json.dumps(flags), mid))
-            conn.execute(
-                "UPDATE folders SET unread_count=MAX(0,unread_count-1) WHERE id=?",
-                (msg["folder_id"],)
-            )
-            conn.commit()
-
     conn.close()
     return ok(msg)
 

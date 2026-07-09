@@ -45,3 +45,5 @@
 - web/static/js/accounts.js: `gmail_oauth` and `outlook_oauth` presets in provider grid; OAuth form branch in `_acctRenderForm`; `_acctStartGoogleOAuth` / `_acctStartMicrosoftOAuth`; edit panel handles OAuth accounts (no password field); MS Integration settings card
 - web/templates/dashboard.html: detect `?oauth_success` / `?oauth_error` on load, show toast and navigate to accounts
 - requirements.txt: added `msal>=1.29`, `google-auth-oauthlib>=1.2`, `google-auth>=2.29`
+- core/database.py: raised SQLite connection timeout 10s → 30s to prevent "database is locked" errors when multiple sync threads and request handlers write concurrently
+- web/routes/emails.py: removed premature `\Seen` flag write from `api_email` route — was causing `mark_read` to short-circuit before pushing flag to IMAP server; IMAP write-back now works correctly for all account types

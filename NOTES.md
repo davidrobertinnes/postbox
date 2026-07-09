@@ -25,7 +25,6 @@ App is running and functional. All features from prior sessions are working.
 1. **Re-auth flow** — detect expired refresh token (especially the 7-day Gmail issue), prompt user to re-authenticate rather than silent sync failure
 2. **Microsoft OAuth testing** — get Azure app registered and test end-to-end
 3. **Google verification** — submit for production publishing to remove 7-day token limit and 100-user cap
-4. **OAuth2 for Gmail** — consider whether to apply for Google's verification/CASA audit for unrestricted publishing
 
 ### Architecture
 

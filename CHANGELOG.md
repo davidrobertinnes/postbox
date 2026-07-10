@@ -47,3 +47,8 @@
 - requirements.txt: added `msal>=1.29`, `google-auth-oauthlib>=1.2`, `google-auth>=2.29`
 - core/database.py: raised SQLite connection timeout 10s → 30s to prevent "database is locked" errors when multiple sync threads and request handlers write concurrently
 - web/routes/emails.py: removed premature `\Seen` flag write from `api_email` route — was causing `mark_read` to short-circuit before pushing flag to IMAP server; IMAP write-back now works correctly for all account types
+- core/imap_sync.py: added `fetch_raw()` — lightweight RFC822 byte fetch without storing or parsing; used for on-demand attachment extraction
+- core/email_parser.py: added `extract_attachment_bytes(raw_bytes, att_index)` — extracts attachment payload by zero-based MIME walk index
+- web/routes/emails.py: added `GET /api/emails/<mid>/attachment/<att_id>` — looks up attachment record, re-fetches RFC822 from IMAP, streams file download via `send_file`
+- web/static/js/emails.js: attachment chips rendered between meta strip and body in email detail; each chip links to download endpoint with `download` attribute; `_emFmtSize()` helper formats byte count
+- web/static/postbox.css: `.em-attachments`, `.em-att-chip`, `.em-att-size` styles for attachment bar

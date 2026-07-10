@@ -276,6 +276,10 @@ function _emRenderDetail(msg, threadId) {
       <div class="em-meta-row"><span class="em-meta-label">To</span><span class="em-meta-val">${esc(toStr)}</span></div>
       <div class="em-meta-row"><span class="em-meta-label">Date</span><span class="em-meta-val">${fmtDate(msg.date)}</span></div>
     </div>
+    ${msg.attachments && msg.attachments.length ? `
+    <div class="em-attachments">
+      ${msg.attachments.map(a => `<a class="em-att-chip" href="/api/emails/${msg.id}/attachment/${a.id}" download="${esc(a.filename)}">&#128206; ${esc(a.filename)}<span class="em-att-size">${_emFmtSize(a.size)}</span></a>`).join('')}
+    </div>` : ''}
     ${msg._fetch_error
       ? `<div class="state-error" style="margin:16px 0">${esc(msg._fetch_error)}</div>`
       : hasHtml
@@ -483,4 +487,11 @@ async function _emAiDraft(msg, threadId) {
 
 function _emParseAddrs(json_str) {
   try { return JSON.parse(json_str || '[]'); } catch(e) { return []; }
+}
+
+function _emFmtSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return ` (${bytes} B)`;
+  if (bytes < 1024 * 1024) return ` (${(bytes / 1024).toFixed(0)} KB)`;
+  return ` (${(bytes / (1024 * 1024)).toFixed(1)} MB)`;
 }

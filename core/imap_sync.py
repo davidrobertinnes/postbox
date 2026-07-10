@@ -442,6 +442,28 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
         conn.close()
 
 
+def fetch_raw(account_id: int, uid: int, folder_name: str, db_path: str) -> bytes | None:
+    """Fetch raw RFC822 bytes for a single message without storing anything."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    account = dict(row)
+    password = None
+    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
+        password = get_password(account_id)
+    try:
+        client = _make_client(account, password)
+        client.select_folder(folder_name, readonly=True)
+        data = client.fetch([uid], ["RFC822"])
+        client.logout()
+        return data[uid][b"RFC822"]
+    except Exception as e:
+        log.error("fetch_raw uid=%s: %s", uid, e)
+        return None
+
+
 # ── Background sync loop — IDLE with polling fallback ─────────────────────────
 
 _IDLE_MAX_SECS     = 29 * 60   # re-IDLE before server's 30-min limit

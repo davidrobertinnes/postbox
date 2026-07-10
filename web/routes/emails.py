@@ -183,6 +183,56 @@ def api_move(mid: int):
     return err("Could not move message")
 
 
+@bp.route("/api/emails/<int:mid>/attachment/<int:att_id>")
+def api_download_attachment(mid: int, att_id: int):
+    import io
+    from flask import send_file
+    from core.imap_sync import fetch_raw
+    from core.email_parser import extract_attachment_bytes
+
+    conn = get_connection(db())
+    att = conn.execute(
+        "SELECT * FROM attachments WHERE id=? AND message_id=?", (att_id, mid)
+    ).fetchone()
+    if not att:
+        conn.close()
+        return err("Attachment not found", 404)
+    att = dict(att)
+
+    msg = conn.execute("""
+        SELECT m.uid, m.account_id, f.name as folder_name
+        FROM messages m JOIN folders f ON f.id = m.folder_id
+        WHERE m.id=?
+    """, (mid,)).fetchone()
+    if not msg:
+        conn.close()
+        return err("Message not found", 404)
+    msg = dict(msg)
+
+    # Determine this attachment's index (position in the ordered list)
+    all_ids = [r[0] for r in conn.execute(
+        "SELECT id FROM attachments WHERE message_id=? ORDER BY id", (mid,)
+    ).fetchall()]
+    conn.close()
+
+    att_index = all_ids.index(att_id) if att_id in all_ids else 0
+
+    raw = fetch_raw(msg["account_id"], msg["uid"], msg["folder_name"], db())
+    if raw is None:
+        return err("Could not fetch message from server")
+
+    data, content_type = extract_attachment_bytes(raw, att_index)
+    if data is None:
+        return err("Attachment data not found in message")
+
+    return send_file(
+        io.BytesIO(data),
+        mimetype=content_type or "application/octet-stream",
+        as_attachment=True,
+        download_name=att["filename"],
+    )
+
+
 @bp.route("/api/threads/<thread_id>")
 def api_thread(thread_id: str):
     """Return all messages in a thread, oldest first."""

@@ -101,6 +101,20 @@ def _get_attachments(msg: email.message.Message) -> list[dict]:
     return attachments
 
 
+def extract_attachment_bytes(raw_bytes: bytes, att_index: int) -> tuple[bytes | None, str | None]:
+    """Extract attachment bytes by zero-based index. Returns (data, content_type)."""
+    msg = email.message_from_bytes(raw_bytes)
+    idx = 0
+    if msg.is_multipart():
+        for part in msg.walk():
+            disp = str(part.get("Content-Disposition") or "")
+            if "attachment" in disp:
+                if idx == att_index:
+                    return part.get_payload(decode=True), part.get_content_type()
+                idx += 1
+    return None, None
+
+
 def snippet_from_text(text: str, max_len: int = 200) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     if len(text) > max_len:

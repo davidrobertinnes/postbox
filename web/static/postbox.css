@@ -798,4 +798,32 @@ html, body {
   transition: background 0.1s;
 }
 .em-move-row:last-child { border-bottom: none; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   ATTACHMENT CHIPS
+══════════════════════════════════════════════════════════════════════ */
+.em-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.em-att-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.em-att-chip:hover { background: var(--accent-dim); border-color: var(--accent); }
+.em-att-size { color: var(--ink3); }
 .em-move-row:hover { background: var(--accent-dim); color: var(--accent); }

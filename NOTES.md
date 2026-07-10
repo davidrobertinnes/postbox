@@ -20,12 +20,13 @@ App is running and functional. All features from prior sessions are working.
 - Requires user to register their own Azure app + enter client ID in MS Integration settings
 - Redirect URI: `http://localhost:5200/oauth/callback/microsoft`
 
-### Attachment download — implemented this session
+### Attachment download — implemented and working
 
 - `GET /api/emails/<mid>/attachment/<att_id>` — re-fetches RFC822 from IMAP on demand, extracts attachment by index, streams as file download
 - `core/imap_sync.py`: `fetch_raw()` — lightweight RFC822 fetch without storing anything
 - `core/email_parser.py`: `extract_attachment_bytes(raw, index)` — extracts attachment bytes by zero-based index from MIME tree
 - UI: attachment chips shown between meta strip and body in email detail view; click to download
+- Fixes needed: inline onclick in innerHTML didn't fire in Chromium app-mode → switched to `addEventListener`; MIME filenames can contain newlines from encoded headers → strip on parse and before send_file
 
 ### Next items (priority order)
 

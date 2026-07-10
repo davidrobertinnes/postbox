@@ -92,9 +92,10 @@ def _get_attachments(msg: email.message.Message) -> list[dict]:
     for part in msg.walk():
         disp = str(part.get("Content-Disposition") or "")
         if "attachment" in disp:
-            filename = part.get_filename() or "attachment"
+            filename = decode_header(part.get_filename() or "attachment")
+            filename = filename.replace('\r', '').replace('\n', '').replace('\t', ' ').strip() or "attachment"
             attachments.append({
-                "filename": decode_header(filename),
+                "filename": filename,
                 "content_type": part.get_content_type(),
                 "size": len(part.get_payload(decode=True) or b""),
             })

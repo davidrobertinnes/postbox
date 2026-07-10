@@ -226,11 +226,13 @@ def api_download_attachment(mid: int, att_id: int):
         if data is None:
             return err(f"Attachment not found in MIME body (index {att_index}, {len(all_ids)} stored)")
 
+        import re
+        safe_name = re.sub(r'[\r\n\t]', ' ', att["filename"] or "attachment").strip() or "attachment"
         return send_file(
             io.BytesIO(data),
             mimetype=content_type or "application/octet-stream",
             as_attachment=True,
-            download_name=att["filename"] or "attachment",
+            download_name=safe_name,
         )
     except Exception:
         return err("Server error: " + traceback.format_exc().splitlines()[-1])

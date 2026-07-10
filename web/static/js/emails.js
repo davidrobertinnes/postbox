@@ -278,7 +278,7 @@ function _emRenderDetail(msg, threadId) {
     </div>
     ${msg.attachments && msg.attachments.length ? `
     <div class="em-attachments">
-      ${msg.attachments.map(a => `<a class="em-att-chip" href="/api/emails/${msg.id}/attachment/${a.id}" download="${esc(a.filename)}">&#128206; ${esc(a.filename)}<span class="em-att-size">${_emFmtSize(a.size)}</span></a>`).join('')}
+      ${msg.attachments.map(a => `<span class="em-att-chip" onclick="_emDownloadAtt(${msg.id},${a.id},'${esc(a.filename)}')">&#128206; ${esc(a.filename)}<span class="em-att-size">${_emFmtSize(a.size)}</span></span>`).join('')}
     </div>` : ''}
     ${msg._fetch_error
       ? `<div class="state-error" style="margin:16px 0">${esc(msg._fetch_error)}</div>`
@@ -494,4 +494,26 @@ function _emFmtSize(bytes) {
   if (bytes < 1024) return ` (${bytes} B)`;
   if (bytes < 1024 * 1024) return ` (${(bytes / 1024).toFixed(0)} KB)`;
   return ` (${(bytes / (1024 * 1024)).toFixed(1)} MB)`;
+}
+
+async function _emDownloadAtt(msgId, attId, filename) {
+  try {
+    const r = await fetch(`/api/emails/${msgId}/attachment/${attId}`);
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      toast(j.error || 'Download failed', 'err');
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    toast('Download failed: ' + e.message, 'err');
+  }
 }

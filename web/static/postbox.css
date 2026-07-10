@@ -820,9 +820,9 @@ html, body {
   background: var(--surface);
   color: var(--accent);
   font-size: 12px;
-  text-decoration: none;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
+  user-select: none;
 }
 .em-att-chip:hover { background: var(--accent-dim); border-color: var(--accent); }
 .em-att-size { color: var(--ink3); }

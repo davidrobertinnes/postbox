@@ -508,8 +508,9 @@ async function _emDownloadAtt(msgId, attId, filename) {
   try {
     const r = await fetch(`/api/emails/${msgId}/attachment/${attId}`);
     if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      toast(j.error || 'Download failed', 'err');
+      let msg = `Download failed (HTTP ${r.status})`;
+      try { const j = await r.json(); if (j.error) msg = j.error; } catch {}
+      toast(msg, 'err');
       return;
     }
     const blob = await r.blob();

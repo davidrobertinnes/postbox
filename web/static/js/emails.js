@@ -276,10 +276,7 @@ function _emRenderDetail(msg, threadId) {
       <div class="em-meta-row"><span class="em-meta-label">To</span><span class="em-meta-val">${esc(toStr)}</span></div>
       <div class="em-meta-row"><span class="em-meta-label">Date</span><span class="em-meta-val">${fmtDate(msg.date)}</span></div>
     </div>
-    ${msg.attachments && msg.attachments.length ? `
-    <div class="em-attachments">
-      ${msg.attachments.map(a => `<span class="em-att-chip" onclick="_emDownloadAtt(${msg.id},${a.id},'${esc(a.filename)}')">&#128206; ${esc(a.filename)}<span class="em-att-size">${_emFmtSize(a.size)}</span></span>`).join('')}
-    </div>` : ''}
+    ${msg.attachments && msg.attachments.length ? `<div class="em-attachments" id="em-att-bar"></div>` : ''}
     ${msg._fetch_error
       ? `<div class="state-error" style="margin:16px 0">${esc(msg._fetch_error)}</div>`
       : hasHtml
@@ -292,6 +289,17 @@ function _emRenderDetail(msg, threadId) {
     iframe.onload = () => {
       try { iframe.style.height = (iframe.contentWindow.document.body.scrollHeight + 40) + 'px'; } catch(e) {}
     };
+  }
+
+  const attBar = document.getElementById('em-att-bar');
+  if (attBar && msg.attachments && msg.attachments.length) {
+    for (const a of msg.attachments) {
+      const chip = document.createElement('span');
+      chip.className = 'em-att-chip';
+      chip.innerHTML = `&#128206; ${esc(a.filename)}<span class="em-att-size">${_emFmtSize(a.size)}</span>`;
+      chip.addEventListener('click', () => _emDownloadAtt(msg.id, a.id, a.filename));
+      attBar.appendChild(chip);
+    }
   }
 
   const foot = document.getElementById('det-foot');

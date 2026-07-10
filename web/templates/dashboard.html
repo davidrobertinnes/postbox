@@ -162,12 +162,14 @@ function _buildSidebar() {
         const sfKey    = `sf_${f.id}`;
         html += `<div class="nav-item nav-item-sub" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(label)}')">
           <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
+          ${f.unread_count > 0 ? `<span class="nav-badge">${f.unread_count}</span>` : ''}
           ${children.length ? `<span class="nav-expand" onclick="event.stopPropagation();_sfToggle('${sfKey}')">&#9660;</span>` : ''}
         </div>
         ${children.length ? `<div id="${sfKey}" class="nav-subgroup" style="display:none">` + children.map(c => {
           const cl = c.display_name || c.name.split('/').pop();
           return `<div class="nav-item nav-item-sub2" data-module="f_${c.id}" onclick="navigateFolder(${c.id}, '${esc(cl)}')">
             <span class="nav-icon" style="opacity:0.3">&#8627;</span>${esc(cl)}
+            ${c.unread_count > 0 ? `<span class="nav-badge">${c.unread_count}</span>` : ''}
           </div>`;
         }).join('') + '</div>' : ''}`;
       }
@@ -211,6 +213,7 @@ function _buildSidebar() {
           const label = f.display_name || f.name.split('/').pop();
           return `<div class="nav-item nav-item-sub" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(label)}')">
             <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
+            ${f.unread_count > 0 ? `<span class="nav-badge">${f.unread_count}</span>` : ''}
           </div>`;
         }).join('')}`;
     }
@@ -234,12 +237,14 @@ function _buildSidebar() {
         const sfKey    = `sf_${f.id}`;
         html += `<div class="nav-item" data-module="f_${f.id}" onclick="navigateFolder(${f.id}, '${esc(f.display_name || f.name)}')">
           <span class="nav-icon">&#128193;</span>${esc(f.display_name || f.name)}
+          ${f.unread_count > 0 ? `<span class="nav-badge">${f.unread_count}</span>` : ''}
           ${hasKids ? `<span class="nav-expand" onclick="event.stopPropagation();_sfToggle('${sfKey}')">&#9660;</span>` : ''}
         </div>
         ${hasKids ? `<div id="${sfKey}" class="nav-subgroup" style="display:none">` + children.map(c => {
           const label = c.display_name || c.name.split('/').pop();
           return `<div class="nav-item nav-item-sub" data-module="f_${c.id}" onclick="navigateFolder(${c.id}, '${esc(label)}')">
             <span class="nav-icon" style="opacity:0.4">&#8627;</span>${esc(label)}
+            ${c.unread_count > 0 ? `<span class="nav-badge">${c.unread_count}</span>` : ''}
           </div>`;
         }).join('') + '</div>' : ''}`;
       }

@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+- **chore: rename launcher `web_server.py` → `mail.py`** — (`mail.py`)
+- **docs: add `CLAUDE.md`** — app overview, tech stack, directory layout, web UI conventions, hard rules, session end protocol. (`CLAUDE.md`)
 - web/templates/dashboard.html, web/static/js/emails.js: Renamed app to **Dogbox Mailman**; updated title, sidebar wordmark
-- web_server.py: Changed DB file extension from `.db` to `.pbox`
-- web_server.py, web/server.py: Updated all description strings to Dogbox Mailman
+- mail.py: Changed DB file extension from `.db` to `.pbox`
+- mail.py, web/server.py: Updated all description strings to Dogbox Mailman
 - web/templates/dashboard.html: Moved power/close button to top-right page header (matching dbox/investments); removed from sidebar footer
 - web/static/postbox.css: Power button styled red (`.footer-icon-close`) with red hover, matching sibling apps
 - web/templates/dashboard.html: Inbox subfolders now render as a collapsible tree directly under the Inbox nav item (toggle arrow) instead of a separate "Inbox Folders" section below

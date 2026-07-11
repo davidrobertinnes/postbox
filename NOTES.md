@@ -1,6 +1,15 @@
 # Dogbox Mailman — Session Notes
 
-## Current state (2026-07-11)
+## Current state (2026-07-12)
+
+### Session 2026-07-12 — launcher rename + CLAUDE.md added
+
+- Launcher renamed `web_server.py` → `mail.py`
+- `CLAUDE.md` created — full context file covering app overview, tech stack, directory layout, web UI conventions, hard rules, and session end protocol
+
+---
+
+## State as of 2026-07-11
 
 App is running and functional. All features from prior sessions are working.
 

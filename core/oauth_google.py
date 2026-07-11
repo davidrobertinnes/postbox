@@ -10,8 +10,8 @@ import time
 
 log = logging.getLogger(__name__)
 
-_GOOGLE_CLIENT_ID     = "877024810138-pq589jmumdgetkuiev2m0b31l61uelrv.apps.googleusercontent.com"
-_GOOGLE_CLIENT_SECRET = "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"
+_GOOGLE_CLIENT_ID     = "858001114182-2n8pavlqajcno7idn0t409vhvokj8d6j.apps.googleusercontent.com"
+_GOOGLE_CLIENT_SECRET = "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"
 
 _SCOPES       = ["https://mail.google.com/", "openid", "https://www.googleapis.com/auth/userinfo.email"]
 _REDIRECT_URI = "http://localhost:5200/oauth/callback/google"

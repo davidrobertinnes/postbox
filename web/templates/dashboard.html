@@ -45,6 +45,12 @@
       </div>
     </div>
 
+    <div class="reauth-banner" id="reauth-banner" style="display:none">
+      <span>&#9888;</span>
+      <span id="reauth-msg"></span>
+      <button class="btn btn-sm" onclick="navigate('accounts');document.getElementById('reauth-banner').style.display='none'">Go to Accounts</button>
+      <button class="reauth-banner-close" onclick="document.getElementById('reauth-banner').style.display='none'">&#10005;</button>
+    </div>
     <div class="content" id="module-content">
       <div class="state-loading">Loading...</div>
     </div>
@@ -375,6 +381,22 @@ _loadFolders();
 })();
 setInterval(_refreshBadge, 30000);
 _refreshBadge();
+
+async function _checkReauth() {
+  try {
+    const accounts = await apiFetch('/api/accounts');
+    const needing = accounts.filter(a => a.needs_reauth);
+    const banner = document.getElementById('reauth-banner');
+    if (!banner) return;
+    if (!needing.length) { banner.style.display = 'none'; return; }
+    const names = needing.map(a => a.name).join(', ');
+    document.getElementById('reauth-msg').textContent =
+      `${names} need${needing.length === 1 ? 's' : ''} re-authentication — email sync has stopped.`;
+    banner.style.display = 'flex';
+  } catch(e) {}
+}
+setInterval(_checkReauth, 300000);
+_checkReauth();
 </script>
 </body>
 </html>

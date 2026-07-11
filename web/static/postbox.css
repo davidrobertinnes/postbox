@@ -827,3 +827,40 @@ html, body {
 .em-att-chip:hover { background: var(--accent-dim); border-color: var(--accent); }
 .em-att-size { color: var(--ink3); }
 .em-move-row:hover { background: var(--accent-dim); color: var(--accent); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   RE-AUTH BANNER + WARNING
+══════════════════════════════════════════════════════════════════════ */
+.reauth-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  background: var(--amber-dim);
+  border-bottom: 1px solid var(--amber);
+  color: var(--amber);
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.reauth-banner-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--amber);
+  font-size: 14px;
+  padding: 2px 6px;
+  margin-left: auto;
+  border-radius: 4px;
+  line-height: 1;
+}
+.reauth-banner-close:hover { background: rgba(138,90,0,0.15); }
+.reauth-warning {
+  background: var(--amber-dim);
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  color: var(--amber);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 8px 0 12px;
+}

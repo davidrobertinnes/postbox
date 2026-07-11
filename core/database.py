@@ -94,5 +94,11 @@ def initialise_database(db_path: str) -> None:
         cached_at TEXT
     )""")
 
+    # Migrations — add columns to existing tables if not present
+    try:
+        c.execute("ALTER TABLE accounts ADD COLUMN needs_reauth INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()

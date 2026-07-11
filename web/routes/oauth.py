@@ -123,23 +123,39 @@ def _create_oauth_account(
     smtp_host: str, smtp_port: int, smtp_ssl: int,
     default_name: str,
 ) -> int:
+    import time as _time
     from core.database import get_connection
     from core.credentials import store_oauth_tokens
-    from core.imap_sync import sync_folders, sync_all_folders_messages, start_sync
+    from core.imap_sync import sync_folders, sync_all_folders_messages, start_sync, stop_sync
 
     data  = result["account_data"]
     email = result.get("email") or data.get("email", "")
     name  = data.get("name") or default_name
 
     conn = get_connection(db())
-    cur = conn.execute("""
-        INSERT INTO accounts
-            (name, email, provider, imap_host, imap_port, imap_ssl,
-             smtp_host, smtp_port, smtp_ssl, username, auth_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (name, email, provider, imap_host, imap_port, imap_ssl,
-          smtp_host, smtp_port, smtp_ssl, email, auth_type))
-    account_id = cur.lastrowid
+    existing = conn.execute(
+        "SELECT id FROM accounts WHERE LOWER(email)=LOWER(?) AND auth_type=?",
+        (email, auth_type)
+    ).fetchone()
+
+    if existing:
+        account_id = existing["id"]
+        conn.execute(
+            "UPDATE accounts SET name=?, needs_reauth=0, active=1 WHERE id=?",
+            (name, account_id)
+        )
+        is_reauth = True
+    else:
+        cur = conn.execute("""
+            INSERT INTO accounts
+                (name, email, provider, imap_host, imap_port, imap_ssl,
+                 smtp_host, smtp_port, smtp_ssl, username, auth_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, email, provider, imap_host, imap_port, imap_ssl,
+              smtp_host, smtp_port, smtp_ssl, email, auth_type))
+        account_id = cur.lastrowid
+        is_reauth = False
+
     conn.commit()
     conn.close()
 
@@ -150,13 +166,14 @@ def _create_oauth_account(
     })
 
     db_path = db()
-    threading.Thread(
-        target=lambda: (
-            sync_folders(account_id, db_path),
-            sync_all_folders_messages(account_id, db_path),
-            start_sync(account_id, db_path),
-        ),
-        daemon=True,
-    ).start()
 
+    def _bg():
+        if is_reauth:
+            stop_sync(account_id)
+            _time.sleep(1)
+        sync_folders(account_id, db_path)
+        sync_all_folders_messages(account_id, db_path)
+        start_sync(account_id, db_path)
+
+    threading.Thread(target=_bg, daemon=True).start()
     return account_id

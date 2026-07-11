@@ -47,6 +47,13 @@
 - requirements.txt: added `msal>=1.29`, `google-auth-oauthlib>=1.2`, `google-auth>=2.29`
 - core/database.py: raised SQLite connection timeout 10s → 30s to prevent "database is locked" errors when multiple sync threads and request handlers write concurrently
 - web/routes/emails.py: removed premature `\Seen` flag write from `api_email` route — was causing `mark_read` to short-circuit before pushing flag to IMAP server; IMAP write-back now works correctly for all account types
+- core/database.py: added `needs_reauth INTEGER DEFAULT 0` column to accounts table via migration
+- core/imap_sync.py: `_is_auth_error()` detects OAuth/token failures; `_set_needs_reauth()` / `_clear_needs_reauth()` flag accounts; sync loop sets flag + waits 1h on auth failure, clears on successful connect; `fetch_body` and `fetch_raw` also set flag on auth errors
+- web/routes/oauth.py: `_create_oauth_account` now upserts — if same email+auth_type exists, updates tokens and clears `needs_reauth` (re-auth flow) rather than inserting a duplicate; stops old sync thread and restarts
+- web/routes/accounts.py: `needs_reauth` included in `/api/accounts` response
+- web/static/js/accounts.js: account edit panel shows amber warning and Re-authenticate button when `needs_reauth=1`; fixed OAuth description to say Google or Microsoft correctly
+- web/templates/dashboard.html: amber banner below page header shows when any account needs re-auth; `_checkReauth()` runs on load and every 5 minutes
+- web/static/postbox.css: `.reauth-banner`, `.reauth-banner-close`, `.reauth-warning` styles
 - core/imap_sync.py: added `fetch_raw()` — lightweight RFC822 byte fetch without storing or parsing; used for on-demand attachment extraction
 - core/email_parser.py: added `extract_attachment_bytes(raw_bytes, att_index)` — extracts attachment payload by zero-based MIME walk index; strips newline characters from MIME-decoded filenames at parse time
 - web/routes/emails.py: added `GET /api/emails/<mid>/attachment/<att_id>` — looks up attachment record, re-fetches RFC822 from IMAP, strips control chars from filename, streams file download via `send_file`

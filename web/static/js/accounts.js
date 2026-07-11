@@ -340,7 +340,8 @@ function _acctEdit(id) {
       <input class="form-input" id="af-edit-email" type="email" value="${esc(acct.email)}"${isOAuth ? ' readonly style="opacity:0.6"' : ''}>
     </div>
     ${isOAuth
-      ? `<div style="font-size:12px;color:var(--ink3);padding:8px 0 4px">Connected via Microsoft OAuth — no password needed.</div>`
+      ? `${acct.needs_reauth ? `<div class="reauth-warning">&#9888; Re-authentication required — email sync has stopped. Use the button below to sign in again.</div>` : ''}
+         <div style="font-size:12px;color:var(--ink3);padding:8px 0 4px">Connected via ${acct.auth_type === 'oauth_google' ? 'Google' : 'Microsoft'} — no password needed.</div>`
       : `<div class="form-row">
            <label class="form-label">New password (leave blank to keep current)</label>
            <input class="form-input" id="af-edit-password" type="password" placeholder="••••••••••••">
@@ -350,9 +351,17 @@ function _acctEdit(id) {
   const foot = document.getElementById('det-foot');
   foot.innerHTML = '';
 
+  if (isOAuth && acct.needs_reauth) {
+    const reauthBtn = document.createElement('button');
+    reauthBtn.className = 'btn btn-primary btn-sm';
+    reauthBtn.textContent = 'Re-authenticate';
+    reauthBtn.onclick = acct.auth_type === 'oauth_google' ? _acctStartGoogleOAuth : _acctStartMicrosoftOAuth;
+    foot.appendChild(reauthBtn);
+  }
+
   const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-primary btn-sm';
-  saveBtn.textContent = 'Save Changes';
+  saveBtn.className = 'btn btn-outline btn-sm';
+  saveBtn.textContent = 'Save Name';
   saveBtn.onclick = async () => {
     const payload = {
       name: document.getElementById('af-edit-name')?.value.trim() || '',

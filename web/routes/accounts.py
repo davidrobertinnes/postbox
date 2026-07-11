@@ -15,7 +15,7 @@ def api_accounts():
     conn = get_connection(db())
     rows = dict_rows(conn.execute(
         "SELECT id, name, email, provider, imap_host, imap_port, imap_ssl, "
-        "smtp_host, smtp_port, smtp_ssl, username, auth_type, last_sync, active "
+        "smtp_host, smtp_port, smtp_ssl, username, auth_type, last_sync, active, needs_reauth "
         "FROM accounts ORDER BY id"
     ).fetchall())
     # Attach folder counts

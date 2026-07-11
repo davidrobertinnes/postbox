@@ -23,6 +23,37 @@ _stop_events: dict[int, threading.Event] = {}
 _OAUTH_AUTH_TYPES = {"oauth_microsoft", "oauth_google"}
 
 
+# ── Re-auth helpers ────────────────────────────────────────────────────────────
+
+def _is_auth_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return any(kw in msg for kw in (
+        'invalid_grant', 'token has been expired', 'token has been revoked',
+        'no oauth tokens', 're-authenticate', 'token expired',
+        'authenticationfailed', 'authentication failed', 'invalid credentials',
+    )) or type(e).__name__ == 'RefreshError'
+
+
+def _set_needs_reauth(account_id: int, db_path: str) -> None:
+    try:
+        conn = get_connection(db_path)
+        conn.execute("UPDATE accounts SET needs_reauth=1 WHERE id=?", (account_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _clear_needs_reauth(account_id: int, db_path: str) -> None:
+    try:
+        conn = get_connection(db_path)
+        conn.execute("UPDATE accounts SET needs_reauth=0 WHERE id=?", (account_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 # ── Connection helpers ─────────────────────────────────────────────────────────
 
 def _make_client(account: dict, password: str | None = None):
@@ -436,7 +467,11 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
         client.logout()
         return True
     except Exception as e:
-        log.error("fetch_body uid=%s: %s", uid, e)
+        if _is_auth_error(e):
+            log.warning("Auth failure fetching body for account=%d: %s", account_id, e)
+            _set_needs_reauth(account_id, db_path)
+        else:
+            log.error("fetch_body uid=%s: %s", uid, e)
         return False
     finally:
         conn.close()
@@ -460,7 +495,11 @@ def fetch_raw(account_id: int, uid: int, folder_name: str, db_path: str) -> byte
         client.logout()
         return data[uid][b"RFC822"]
     except Exception as e:
-        log.error("fetch_raw uid=%s: %s", uid, e)
+        if _is_auth_error(e):
+            log.warning("Auth failure in fetch_raw for account=%d: %s", account_id, e)
+            _set_needs_reauth(account_id, db_path)
+        else:
+            log.error("fetch_raw uid=%s: %s", uid, e)
         return None
 
 
@@ -533,6 +572,7 @@ def _sync_loop_idle(account_id: int, db_path: str, stop: threading.Event) -> Non
                     continue
 
             client = _make_client(dict(acct_row), password)
+            _clear_needs_reauth(account_id, db_path)
             caps = client.capabilities()
             has_idle = b"IDLE" in caps or "IDLE" in caps
 
@@ -571,8 +611,13 @@ def _sync_loop_idle(account_id: int, db_path: str, stop: threading.Event) -> Non
                     log.error("inbox sync after IDLE account=%d: %s", account_id, e)
 
         except Exception as e:
-            log.error("idle loop account=%d: %s", account_id, e)
-            stop.wait(30)  # Brief pause before reconnecting
+            if _is_auth_error(e):
+                log.warning("Auth failure account=%d — re-auth required: %s", account_id, e)
+                _set_needs_reauth(account_id, db_path)
+                stop.wait(3600)  # Don't hammer retries on auth failure
+            else:
+                log.error("idle loop account=%d: %s", account_id, e)
+                stop.wait(30)
 
 
 def start_sync(account_id: int, db_path: str, interval: int = 60) -> None:

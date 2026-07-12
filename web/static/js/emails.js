@@ -220,6 +220,8 @@ function _emRender(keepScroll) {
       ${msgs.length < _emTotal ? `<button class="btn btn-outline btn-sm em-load-more" style="margin-left:12px" onclick="_emLoadMore()">Load more</button><button class="btn btn-outline btn-sm em-load-all" style="margin-left:6px" onclick="_emLoadAll()">Load all</button>` : ''}
     </div>`;
 
+  if (scrollTop) mc.scrollTop = scrollTop;
+
   const q = document.getElementById('em-q');
   if (q) {
     q.addEventListener('input', e => {

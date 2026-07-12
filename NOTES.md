@@ -2,7 +2,16 @@
 
 ## Current state (2026-07-12)
 
-### Session 2026-07-12 — launcher rename + CLAUDE.md added
+### Session 2026-07-12 (2) — category filtering, bulk move, triage fallback, bug fixes
+
+- Search focus loss fixed — focus and cursor restored after `_emRender`; 300ms debounce added
+- Scroll preservation fixed — `scrollTop` now correctly restored in `_emRender(keepScroll)`
+- Category filter pills in inbox toolbar — filter by invoice/support/personal/newsletter/etc
+- Bulk move — "Move all N…" modal moves all messages in active category to chosen folder
+- Rule-based triage fallback in `core/ai_client.py` — works without an API key
+- Triage query now covers all untriaged messages, not just unread
+
+### Session 2026-07-12 (1) — launcher rename + CLAUDE.md added
 
 - Launcher renamed `web_server.py` → `mail.py`
 - `CLAUDE.md` created — full context file covering app overview, tech stack, directory layout, web UI conventions, hard rules, and session end protocol

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- web/static/js/emails.js: fixed search input losing focus after each keypress — capture focus state before `mc.innerHTML` replacement and restore with cursor at end after render
+- web/static/js/emails.js: debounced search input 300ms to avoid firing an API call on every keystroke
+- web/static/js/emails.js: fixed `scrollTop` captured but never restored in `_emRender(keepScroll)` — sort and move operations now preserve scroll position
+- core/ai_client.py: rule-based triage fallback (`_triage_rules`) — categorises and prioritises messages by regex when no Anthropic API key is configured
+- core/imap_actions.py: `bulk_move_messages()` — IMAP batch move for a list of message IDs, grouped by source folder with COPY+DELETE expunge fallback
+- web/routes/emails.py: `category=` filter param on `/api/emails`; new `POST /api/emails/bulk_move` route to move all messages of a given category at once
+- web/routes/ai.py: removed `AND m.flags NOT LIKE '%Seen%'` from triage query — now triages all untriaged messages, not just unread
+- web/static/js/emails.js: category filter pills in inbox toolbar (`_emCategoryPills`, `_emSetCategory`); "Move all N…" bulk move button when a category filter is active
+- web/static/js/emails.js: `_emBulkMove()` — searchable folder picker modal to bulk-move all messages in the active category
+- web/static/postbox.css: category filter pill styles (`.em-pill-cat`, per-category colour variants)
+
 - **chore: rename launcher `web_server.py` → `mail.py`** — (`mail.py`)
 - **docs: add `CLAUDE.md`** — app overview, tech stack, directory layout, web UI conventions, hard rules, session end protocol. (`CLAUDE.md`)
 - web/templates/dashboard.html, web/static/js/emails.js: Renamed app to **Dogbox Mailman**; updated title, sidebar wordmark

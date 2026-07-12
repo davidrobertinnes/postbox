@@ -12,8 +12,9 @@ let _emTotal         = 0;
 let _emOffset        = 0;
 let _emAccounts      = [];
 let _emSort          = { col: 'date', dir: -1 };
-let _emPriorityFilter = null;     // null=all, 1=urgent only
-let _emAccountId     = null;      // null=all accounts, or account id
+let _emPriorityFilter  = null;     // null=all, 1=urgent only
+let _emCategoryFilter  = null;     // null=all, or category string
+let _emAccountId       = null;     // null=all accounts, or account id
 
 const _EM_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3aed'];
 
@@ -29,10 +30,11 @@ async function pageEmails(folder, folderName, accountId = null) {
   _emFolder        = folder || 'inbox';
   _emFolderId      = null;
   _emFolderName    = folderName || { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk', all:'All Mail' }[_emFolder] || _emFolder;
-  _emSearch        = '';
-  _emOffset        = 0;
+  _emSearch         = '';
+  _emOffset         = 0;
   _emPriorityFilter = null;
-  _emAccountId     = accountId;
+  _emCategoryFilter = null;
+  _emAccountId      = accountId;
   const mc = document.getElementById('module-content');
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
@@ -45,12 +47,13 @@ async function pageEmails(folder, folderName, accountId = null) {
 
 // Called by sidebar folder list for specific folder by ID
 async function pageEmailsFolder(folderId, folderDisplayName) {
-  _emFolder   = null;
-  _emFolderId = folderId;
-  _emFolderName = folderDisplayName || 'Folder';
-  _emSearch   = '';
-  _emOffset   = 0;
-  _emAccountId = null;
+  _emFolder         = null;
+  _emFolderId       = folderId;
+  _emFolderName     = folderDisplayName || 'Folder';
+  _emSearch         = '';
+  _emOffset         = 0;
+  _emCategoryFilter = null;
+  _emAccountId      = null;
   document.getElementById('page-title').textContent = _emFolderName;
   const mc = document.getElementById('module-content');
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
@@ -71,6 +74,7 @@ async function _emLoad(append = false) {
   }
   if (_emSearch) params.set('q', _emSearch);
   if (_emPriorityFilter) params.set('priority', _emPriorityFilter);
+  if (_emCategoryFilter) params.set('category', _emCategoryFilter);
   if (_emAccountId) params.set('account', _emAccountId);
   const data = await apiFetch('/api/emails?' + params);
   if (append) {
@@ -111,6 +115,12 @@ async function _emLoadAll() {
 
 function _emSetPriority(p) {
   _emPriorityFilter = p;
+  _emOffset = 0;
+  _emLoad();
+}
+
+function _emSetCategory(cat) {
+  _emCategoryFilter = cat;
   _emOffset = 0;
   _emLoad();
 }
@@ -161,10 +171,13 @@ function _emTh(col, label, extraStyle) {
   return `<th onclick="emSort('${col}')" style="cursor:pointer;user-select:none${extraStyle ? ';' + extraStyle : ''}" class="${active ? 'sort-active' : ''}">${label}${arrow}</th>`;
 }
 
+let _emSearchTimer = null;
+
 function _emRender(keepScroll) {
   const mc = document.getElementById('module-content');
   const msgs = _emMessages;
   const scrollTop = keepScroll ? (mc.querySelector('.em-list-panel')?.parentElement?.scrollTop || 0) : 0;
+  const searchWasFocused = document.activeElement?.id === 'em-q';
 
   mc.innerHTML = `
     <div class="em-toolbar">
@@ -178,7 +191,9 @@ function _emRender(keepScroll) {
       <div class="em-filter-pills">
         <button class="em-pill${_emPriorityFilter === null ? ' active' : ''}" onclick="_emSetPriority(null)">All</button>
         <button class="em-pill em-pill-urgent${_emPriorityFilter === 1 ? ' active' : ''}" onclick="_emSetPriority(1)">&#9873; Urgent</button>
-      </div>` : ''}
+      </div>
+      ${_emCategoryPills()}` : ''}
+      ${_emCategoryFilter && _emTotal > 0 ? `<button class="btn btn-outline btn-sm" onclick="_emBulkMove('${_emCategoryFilter}')">Move all ${_emTotal}&hellip;</button>` : ''}
       <button class="btn btn-primary btn-sm" onclick="composeNew(${_emAccountId || 'null'})">&#9998; Compose</button>
     </div>
     <div class="em-list-panel">
@@ -207,8 +222,16 @@ function _emRender(keepScroll) {
 
   const q = document.getElementById('em-q');
   if (q) {
-    q.addEventListener('input', e => { _emSearch = e.target.value; _emOffset = 0; _emLoad(); });
-    q.addEventListener('keydown', e => { if (e.key === 'Escape') { _emSearch = ''; q.value = ''; _emLoad(); } });
+    q.addEventListener('input', e => {
+      _emSearch = e.target.value;
+      _emOffset = 0;
+      clearTimeout(_emSearchTimer);
+      _emSearchTimer = setTimeout(() => _emLoad(), 300);
+    });
+    q.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { clearTimeout(_emSearchTimer); _emSearch = ''; q.value = ''; _emLoad(); }
+    });
+    if (searchWasFocused) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
   }
 }
 
@@ -216,6 +239,91 @@ const _EM_CATEGORIES = {
   invoice:'#8a5a00', support:'#185FA5', personal:'#3B6D11',
   newsletter:'#555', marketing:'#555', notification:'#555',
 };
+
+const _EM_CAT_LABELS = {
+  invoice:'Invoices', support:'Support', personal:'Personal',
+  newsletter:'Newsletters', marketing:'Marketing', notification:'Notifications', other:'Other',
+};
+
+function _emCategoryPills() {
+  const cats = [...new Set(_emMessages.filter(m => m.ai_category).map(m => m.ai_category))];
+  if (!cats.length) return '';
+  return `<div class="em-filter-pills">
+    <button class="em-pill${_emCategoryFilter === null ? ' active' : ''}" onclick="_emSetCategory(null)">All types</button>
+    ${cats.map(c => `<button class="em-pill em-pill-cat em-pill-cat-${c}${_emCategoryFilter === c ? ' active' : ''}" onclick="_emSetCategory('${c}')">${esc(_EM_CAT_LABELS[c] || c)}</button>`).join('')}
+  </div>`;
+}
+
+async function _emBulkMove(category) {
+  const accountId = _emAccountId || (_emMessages.length ? _emMessages[0].account_id : null);
+  let folders;
+  try {
+    folders = await apiFetch('/api/folders' + (accountId ? '?account=' + accountId : ''));
+  } catch(e) {
+    toast('Could not load folders: ' + e.message, 'err');
+    return;
+  }
+  const choices = folders.filter(f => f.role !== 'trash');
+  const label = _EM_CAT_LABELS[category] || category;
+
+  const bd = document.createElement('div');
+  bd.className = 'modal-bd';
+  bd.style.display = 'flex';
+  bd.innerHTML = `
+    <div class="modal-box" style="width:360px;max-height:520px;display:flex;flex-direction:column">
+      <div class="modal-hdr">
+        <span>Move all ${_emTotal} ${label} to&hellip;</span>
+        <button class="modal-close" onclick="this.closest('.modal-bd').remove()">&#x2715;</button>
+      </div>
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+        <input id="em-bmove-q" class="form-input" placeholder="Search folders&hellip;" autocomplete="off" style="width:100%">
+      </div>
+      <div id="em-bmove-list" style="overflow-y:auto;flex:1;padding:6px 0"></div>
+    </div>`;
+  document.body.appendChild(bd);
+  bd.addEventListener('click', e => { if (e.target === bd) bd.remove(); });
+
+  const listEl  = bd.querySelector('#em-bmove-list');
+  const searchEl = bd.querySelector('#em-bmove-q');
+
+  function renderList(q) {
+    const filtered = q ? choices.filter(f => f.name.toLowerCase().includes(q.toLowerCase())) : choices;
+    if (!filtered.length) {
+      listEl.innerHTML = '<div style="padding:12px 16px;color:var(--ink3);font-size:13px">No matching folders</div>';
+      return;
+    }
+    listEl.innerHTML = filtered.map(f => {
+      const lbl = f.display_name || f.name;
+      const roleTag = f.role ? `<span style="font-size:10px;color:var(--ink3);margin-left:6px">${esc(f.role)}</span>` : '';
+      return `<div class="em-move-row" data-fid="${f.id}" data-fname="${esc(lbl)}">${esc(lbl)}${roleTag}</div>`;
+    }).join('');
+    listEl.querySelectorAll('.em-move-row').forEach(row => {
+      row.onclick = async () => {
+        bd.remove();
+        const folderId = parseInt(row.dataset.fid);
+        const folderName = row.dataset.fname;
+        try {
+          const r = await fetch('/api/emails/bulk_move', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ category, folder_id: folderId, folder_role: _emFolder || null, account_id: _emAccountId }),
+          }).then(r => r.json());
+          if (!r.ok) { toast(r.error || 'Move failed', 'err'); return; }
+          const n = r.data.moved;
+          _emMessages = _emMessages.filter(m => m.ai_category !== category);
+          _emTotal    = Math.max(0, _emTotal - n);
+          _emCategoryFilter = null;
+          _emRender(true);
+          toast(`Moved ${n} message${n !== 1 ? 's' : ''} to ${folderName}`);
+        } catch(e) { toast('Move failed: ' + e.message, 'err'); }
+      };
+    });
+  }
+
+  renderList('');
+  searchEl.addEventListener('input', e => renderList(e.target.value));
+  searchEl.focus();
+}
 
 function _emRow(msg) {
   const acctIdx  = _emAccounts.findIndex(a => a.id === msg.account_id);

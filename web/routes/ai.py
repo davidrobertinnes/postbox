@@ -149,7 +149,6 @@ def api_triage():
         JOIN folders f ON f.id = m.folder_id
         WHERE f.role = 'inbox'
           AND m.ai_priority IS NULL
-          AND m.flags NOT LIKE '%Seen%'
         ORDER BY m.date DESC
         LIMIT ?
     """, (limit,)).fetchall())

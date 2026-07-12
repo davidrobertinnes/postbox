@@ -97,6 +97,37 @@ def draft_reply(thread: list[dict], user_intent: str, account_name: str = "") ->
         return f"(Draft unavailable: {e})"
 
 
+_INVOICE_RE      = r'\b(invoice|receipt|payment|order|statement|bill|quote|tax)\b'
+_NEWSLETTER_RE   = r'\b(newsletter|digest|weekly|monthly|roundup|unsubscribe|edition)\b'
+_MARKETING_RE    = r'\b(sale|offer|deal|discount|promo|coupon|% off|limited time|shop now|buy now)\b'
+_SUPPORT_RE      = r'\b(ticket|case|support|help desk|issue|request|inquiry|enquiry)\b'
+_NOREPLY_RE      = r'(no.?reply|noreply|do.?not.?reply|mailer|notifications?@|alerts?@|updates?@)'
+
+
+def _triage_rules(m: dict) -> dict:
+    """Rule-based fallback triage — no API key required."""
+    import re
+    addr    = (m.get('from_addr') or '').lower()
+    subject = (m.get('subject')   or '').lower()
+    snippet = (m.get('snippet')   or '').lower()
+    text    = subject + ' ' + snippet
+
+    if re.search(_NOREPLY_RE, addr, re.I):
+        category, priority = 'notification', 3
+    elif re.search(_INVOICE_RE, text, re.I):
+        category, priority = 'invoice', 1
+    elif re.search(_SUPPORT_RE, text, re.I):
+        category, priority = 'support', 2
+    elif re.search(_NEWSLETTER_RE, text, re.I):
+        category, priority = 'newsletter', 3
+    elif re.search(_MARKETING_RE, text, re.I):
+        category, priority = 'marketing', 3
+    else:
+        category, priority = 'personal', 2
+
+    return {'id': m['id'], 'priority': priority, 'category': category}
+
+
 def triage_messages(messages: list[dict]) -> list[dict]:
     """
     Batch-triage a list of message dicts (id, from_addr, subject, snippet).
@@ -106,6 +137,12 @@ def triage_messages(messages: list[dict]) -> list[dict]:
     """
     if not messages:
         return []
+
+    # Fall back to rules if no API key is set
+    try:
+        _client()
+    except RuntimeError:
+        return [_triage_rules(m) for m in messages]
 
     items = "\n".join(
         f"[{i}] from={m.get('from_addr') or ''} "

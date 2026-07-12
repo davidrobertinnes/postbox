@@ -178,6 +178,63 @@ def trash_message(message_db_id: int, db_path: str) -> bool:
     return moved
 
 
+def bulk_move_messages(message_ids: list, dst_folder_id: int, db_path: str) -> int:
+    """Move a list of message DB IDs to dst_folder_id. Returns count moved."""
+    if not message_ids:
+        return 0
+
+    conn = get_connection(db_path)
+    dst = conn.execute("SELECT * FROM folders WHERE id=?", (dst_folder_id,)).fetchone()
+    if not dst:
+        conn.close()
+        return 0
+    dst = dict(dst)
+    dst_folder_name = dst["name"]
+    dst_account_id  = dst["account_id"]
+
+    placeholders = ",".join("?" * len(message_ids))
+    rows = conn.execute(f"""
+        SELECT m.id, m.uid, m.account_id, m.folder_id, f.name as folder_name
+        FROM messages m JOIN folders f ON f.id = m.folder_id
+        WHERE m.id IN ({placeholders}) AND m.account_id=?
+    """, message_ids + [dst_account_id]).fetchall()
+    conn.close()
+
+    if not rows:
+        return 0
+
+    from collections import defaultdict
+    by_folder = defaultdict(list)
+    for row in rows:
+        by_folder[(row["account_id"], row["folder_name"])].append(dict(row))
+
+    moved = 0
+    for (account_id, src_folder_name), group in by_folder.items():
+        uids = [r["uid"] for r in group]
+        try:
+            client = _imap_connect(account_id, db_path)
+            if not client:
+                continue
+            client.select_folder(src_folder_name, readonly=False)
+            try:
+                client.move(uids, dst_folder_name)
+            except Exception:
+                client.copy(uids, dst_folder_name)
+                client.add_flags(uids, ["\\Deleted"])
+                client.expunge()
+            client.logout()
+            conn = get_connection(db_path)
+            for r in group:
+                conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (dst_folder_id, r["id"]))
+            conn.commit()
+            conn.close()
+            moved += len(group)
+        except Exception as e:
+            log.error("bulk_move src=%s account=%d: %s", src_folder_name, account_id, e)
+
+    return moved
+
+
 def move_message(message_db_id: int, dst_folder_id: int, db_path: str) -> bool:
     conn = get_connection(db_path)
     row = _load_message(conn, message_db_id)

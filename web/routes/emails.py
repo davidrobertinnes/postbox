@@ -52,6 +52,11 @@ def api_emails():
         where.append("m.ai_priority=?")
         params.append(priority)
 
+    category = request.args.get("category")
+    if category:
+        where.append("m.ai_category=?")
+        params.append(category)
+
     if q:
         where.append("(m.subject LIKE ? OR m.from_addr LIKE ? OR m.from_name LIKE ? OR m.snippet LIKE ?)")
         params.extend([f"%{q}%"] * 4)
@@ -95,6 +100,44 @@ def api_unread_count():
     ).fetchone()
     conn.close()
     return ok({"unread": row["n"] or 0})
+
+
+@bp.route("/api/emails/bulk_move", methods=["POST"])
+def api_bulk_move():
+    from core.imap_actions import bulk_move_messages
+    data = request.get_json() or {}
+    category  = data.get("category")
+    folder_id = data.get("folder_id")
+    folder_role = data.get("folder_role") or "inbox"
+    account_id  = data.get("account_id")
+
+    if not folder_id or not category:
+        return err("category and folder_id required")
+
+    conn = get_connection(db())
+    where = ["m.ai_category=?"]
+    params = [category]
+    if folder_role:
+        where.append("f.role=?")
+        params.append(folder_role)
+    if account_id:
+        where.append("m.account_id=?")
+        params.append(account_id)
+    where_clause = "WHERE " + " AND ".join(where)
+    rows = conn.execute(f"""
+        SELECT m.id FROM messages m
+        JOIN folders f ON f.id = m.folder_id
+        {where_clause}
+        LIMIT 500
+    """, params).fetchall()
+    conn.close()
+
+    if not rows:
+        return ok({"moved": 0})
+
+    ids = [r[0] for r in rows]
+    moved = bulk_move_messages(ids, int(folder_id), db())
+    return ok({"moved": moved})
 
 
 @bp.route("/api/emails/<int:mid>")

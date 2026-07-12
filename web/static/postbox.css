@@ -864,3 +864,19 @@ html, body {
   font-size: 13px;
   margin: 8px 0 12px;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   CATEGORY FILTER PILLS
+══════════════════════════════════════════════════════════════════════ */
+.em-pill-cat:hover        { border-color: var(--accent); color: var(--accent); }
+.em-pill-cat.active       { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.em-pill-cat-invoice:hover      { border-color: #8a5a00; color: #8a5a00; }
+.em-pill-cat-invoice.active     { background: #8a5a00; border-color: #8a5a00; color: #fff; }
+.em-pill-cat-support:hover      { border-color: var(--accent); color: var(--accent); }
+.em-pill-cat-support.active     { background: var(--accent); border-color: var(--accent); color: #fff; }
+.em-pill-cat-personal:hover     { border-color: #3B6D11; color: #3B6D11; }
+.em-pill-cat-personal.active    { background: #3B6D11; border-color: #3B6D11; color: #fff; }
+.em-pill-cat-newsletter.active  { background: #555; border-color: #555; color: #fff; }
+.em-pill-cat-marketing.active   { background: #555; border-color: #555; color: #fff; }
+.em-pill-cat-notification.active { background: #555; border-color: #555; color: #fff; }

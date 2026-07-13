@@ -105,6 +105,10 @@ def initialise_database(db_path: str) -> None:
         c.execute("ALTER TABLE accounts ADD COLUMN needs_reauth INTEGER DEFAULT 0")
     except Exception:
         pass
+    try:
+        c.execute("ALTER TABLE accounts ADD COLUMN signature TEXT")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()

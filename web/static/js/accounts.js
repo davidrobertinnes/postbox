@@ -346,7 +346,11 @@ function _acctEdit(id) {
            <label class="form-label">New password (leave blank to keep current)</label>
            <input class="form-input" id="af-edit-password" type="password" placeholder="••••••••••••">
          </div>`
-    }`;
+    }
+    <div class="form-row">
+      <label class="form-label">Email signature</label>
+      <textarea class="form-input" id="af-edit-sig" rows="4" placeholder="e.g. Regards,\nYour Name\n+61 4xx xxx xxx" style="resize:vertical;font-size:13px">${esc(acct.signature || '')}</textarea>
+    </div>`;
 
   const foot = document.getElementById('det-foot');
   foot.innerHTML = '';
@@ -366,6 +370,7 @@ function _acctEdit(id) {
     const payload = {
       name: document.getElementById('af-edit-name')?.value.trim() || '',
       email: document.getElementById('af-edit-email')?.value.trim() || '',
+      signature: document.getElementById('af-edit-sig')?.value || '',
     };
     const pw = isOAuth ? '' : (document.getElementById('af-edit-password')?.value || '');
     if (pw) payload.password = pw;

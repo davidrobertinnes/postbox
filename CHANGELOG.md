@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- core/database.py: added `signature TEXT` migration to accounts table
+- core/imap_actions.py: `toggle_starred()` — toggles `\\Flagged` IMAP flag on a message, updates DB flags JSON, write-back to IMAP best-effort; returns bool (now starred)
+- core/imap_actions.py: `mark_all_read()` — marks a list of message IDs as read in DB, batches IMAP write-back grouped by (account, folder)
+- web/routes/accounts.py: `signature` field included in GET `/api/accounts` response; added to updatable fields in PUT `/api/accounts/<id>`
+- web/routes/emails.py: `_parse_search_operators()` — tokenises search query into `from:`, `subject:`, `has:attachment`, `is:unread`, `is:starred` filters plus freetext remainder; applied in `api_emails()`
+- web/routes/emails.py: `POST /api/emails/<id>/star` — calls `toggle_starred`, returns `{starred: bool}`
+- web/routes/emails.py: `POST /api/emails/mark_all_read` — accepts `folder_role`/`folder_id` + optional `account_id`, marks up to 1000 unread messages read
+- web/static/js/accounts.js: signature textarea added to account edit panel; value sent in PUT payload
+- web/static/js/compose.js: `_cmpPopulateAccounts` stores signature in `data-sig` on each option; for new messages (`_isNew` flag on modal), auto-injects signature below `-- ` separator; account-change listener swaps signature in-place
+- web/static/js/emails.js: star column (☆/★) added to list table header and `_emRow`; click calls `_emToggleStar()` with `stopPropagation` so email doesn't open; star cell updated optimistically
+- web/static/js/emails.js: `_emToggleStar()` — POSTs to `/star`, updates cell HTML and in-memory `msg.flags`
+- web/static/js/emails.js: "✓ All read" button added to toolbar (inbox and specific-folder views); calls `_emMarkAllRead()`
+- web/static/js/emails.js: `_emMarkAllRead()` — POSTs to `/api/emails/mark_all_read`, updates `_emMessages` flags in memory, re-renders
+- web/static/js/emails.js: `_emAiDraft()` rewritten — replaces `window.prompt()` with a modal textarea; Ctrl+Enter submits; Cancel closes
+- web/static/js/emails.js: Star/Unstar button added to detail footer; updates both the footer button and the list-row star cell
+- web/static/js/emails.js: inbox auto-refresh — `setInterval` every 2 minutes calls `_emLoad()` (which also triggers triage); timer cleared on folder/page navigation via `_emStopAutoRefresh()`
+- web/static/postbox.css: `.em-star-cell`, `.em-star`, `.em-star.starred` styles for star column
+
 - web/static/js/compose.js: Attach button in compose footer opens hidden file input (multiple files); selected files shown as removable chips in bar above footer; _cmpFiles reset on open and close
 - web/static/js/compose.js: send switched from JSON to FormData so binary file data is carried correctly
 - web/routes/compose.py: accepts multipart/form-data or JSON; reads attached files via request.files.getlist('attachments')

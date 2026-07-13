@@ -10,13 +10,36 @@ from core.imap_sync import fetch_body
 bp = Blueprint("emails", __name__)
 
 
+def _parse_search_operators(q: str):
+    """Split 'from:alice subject:invoice has:attachment is:unread is:starred freetext'
+    into structured filters and remaining freetext."""
+    import re
+    filters = {}
+    freetext = []
+    for token in q.split():
+        if token.startswith("from:"):
+            filters["from"] = token[5:]
+        elif token.startswith("subject:"):
+            filters["subject"] = token[8:]
+        elif token == "has:attachment":
+            filters["has_attachment"] = True
+        elif token == "is:unread":
+            filters["is_unread"] = True
+        elif token == "is:starred":
+            filters["is_starred"] = True
+        else:
+            freetext.append(token)
+    filters["freetext"] = " ".join(freetext)
+    return filters
+
+
 @bp.route("/api/emails")
 def api_emails():
     """
     List messages. Query params:
       folder=inbox|sent|drafts|trash|spam|all  (default: inbox)
       account=<id>    (default: all accounts)
-      q=<search>
+      q=<search>      (supports from:, subject:, has:attachment, is:unread, is:starred)
       unread=1        (only unread)
       limit=<n>       (default 100)
       offset=<n>      (default 0)
@@ -58,8 +81,23 @@ def api_emails():
         params.append(category)
 
     if q:
-        where.append("(m.subject LIKE ? OR m.from_addr LIKE ? OR m.from_name LIKE ? OR m.snippet LIKE ?)")
-        params.extend([f"%{q}%"] * 4)
+        sf = _parse_search_operators(q)
+        if sf.get("from"):
+            where.append("(m.from_addr LIKE ? OR m.from_name LIKE ?)")
+            params.extend([f"%{sf['from']}%"] * 2)
+        if sf.get("subject"):
+            where.append("m.subject LIKE ?")
+            params.append(f"%{sf['subject']}%")
+        if sf.get("has_attachment"):
+            where.append("m.has_attachments=1")
+        if sf.get("is_unread"):
+            where.append("m.flags NOT LIKE '%Seen%'")
+        if sf.get("is_starred"):
+            where.append("m.flags LIKE '%Flagged%'")
+        if sf["freetext"]:
+            ft = sf["freetext"]
+            where.append("(m.subject LIKE ? OR m.from_addr LIKE ? OR m.from_name LIKE ? OR m.snippet LIKE ?)")
+            params.extend([f"%{ft}%"] * 4)
 
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
     params.extend([limit, offset])
@@ -192,6 +230,39 @@ def api_email(mid: int):
     return ok(msg)
 
 
+@bp.route("/api/emails/mark_all_read", methods=["POST"])
+def api_mark_all_read():
+    from core.imap_actions import mark_all_read
+    data = request.get_json() or {}
+    folder_role = data.get("folder_role")
+    folder_id_arg = data.get("folder_id")
+    account_id_arg = data.get("account_id")
+
+    conn = get_connection(db())
+    if folder_id_arg:
+        where = "WHERE m.folder_id=? AND m.flags NOT LIKE '%Seen%'"
+        wparams = [folder_id_arg]
+    elif folder_role:
+        where = "WHERE f.role=? AND m.flags NOT LIKE '%Seen%'"
+        wparams = [folder_role]
+    else:
+        conn.close()
+        return err("folder_role or folder_id required")
+    if account_id_arg:
+        where += " AND m.account_id=?"
+        wparams.append(account_id_arg)
+    rows = conn.execute(f"""
+        SELECT m.id FROM messages m JOIN folders f ON f.id = m.folder_id
+        {where} LIMIT 1000
+    """, wparams).fetchall()
+    conn.close()
+    if not rows:
+        return ok({"marked": 0})
+    ids = [r[0] for r in rows]
+    marked = mark_all_read(ids, db())
+    return ok({"marked": marked})
+
+
 @bp.route("/api/emails/<int:mid>/mark_read", methods=["POST"])
 def api_mark_read(mid: int):
     from core.imap_actions import mark_read
@@ -212,6 +283,13 @@ def api_trash(mid: int):
     if trash_message(mid, db()):
         return ok()
     return err("Could not trash message")
+
+
+@bp.route("/api/emails/<int:mid>/star", methods=["POST"])
+def api_star(mid: int):
+    from core.imap_actions import toggle_starred
+    starred = toggle_starred(mid, db())
+    return ok({"starred": starred})
 
 
 @bp.route("/api/emails/<int:mid>/move", methods=["POST"])

@@ -2,6 +2,22 @@
 
 ## Current state (2026-07-14)
 
+### Session 2026-07-14 (4) — signatures, star/flag, bulk mark-read, search operators, AI draft modal, auto-refresh
+
+- **Signatures** — `signature TEXT` column added to accounts table (migration); edit form in accounts panel has a signature textarea; new messages auto-inject signature below a `-- ` separator; switching accounts in compose replaces the signature
+- **Star/flag** — star column (☆/★) added to email list; click toggles `\\Flagged` IMAP flag without opening email; Star/Unstar button in detail footer; `is:starred` search operator supported
+- **Bulk mark-read** — "✓ All read" button in toolbar (inbox and folder views); marks all visible messages read in DB and IMAP; `POST /api/emails/mark_all_read` route
+- **Search operators** — `from:`, `subject:`, `has:attachment`, `is:unread`, `is:starred` now parsed server-side; freetext remainder used for full-text search as before
+- **AI draft modal** — `window.prompt()` replaced with proper textarea modal; Ctrl+Enter submits; Cancel closes
+- **Auto-refresh** — inbox now polls every 2 minutes for new mail and runs triage; timer cleared on folder navigation
+
+### Next items (priority order)
+
+1. **Google verification** — submit for production publishing to remove 7-day token limit and 100-user cap
+2. **Microsoft OAuth testing** — get Azure app registered and test end-to-end (deferred — Azure requires credit card)
+
+---
+
 ### Session 2026-07-14 (3) — compose: file attachments
 
 - Attach button in compose footer opens file picker (multi-file supported)

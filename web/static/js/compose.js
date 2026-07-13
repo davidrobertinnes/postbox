@@ -110,6 +110,7 @@ function _cmpOpen(opts) {
 
   bd._replyMsgId = opts.replyMsgId || null;
   bd._references = opts.references || null;
+  bd._isNew      = !(opts.body);
 
   if (!opts.to) {
     document.getElementById('cmp-to')?.focus();
@@ -160,8 +161,30 @@ async function _cmpPopulateAccounts(preferredId) {
     const sel = document.getElementById('cmp-account');
     if (!sel) return;
     sel.innerHTML = accounts.map(a =>
-      `<option value="${a.id}"${a.id === preferredId ? ' selected' : ''}>${esc(a.name)} &lt;${esc(a.email)}&gt;</option>`
+      `<option value="${a.id}"${a.id === preferredId ? ' selected' : ''} data-sig="${esc(a.signature || '')}">${esc(a.name)} &lt;${esc(a.email)}&gt;</option>`
     ).join('');
+
+    const modal = document.getElementById('cmp-modal');
+    if (modal && modal._isNew) {
+      const _applySignature = (opt) => {
+        const sig = (opt?.dataset.sig || '').trim();
+        const bodyEl = document.getElementById('cmp-body');
+        if (!bodyEl) return;
+        const sigPrefix = '\n\n-- \n';
+        const sigStart = bodyEl.value.indexOf(sigPrefix);
+        if (sig) {
+          if (sigStart !== -1) {
+            bodyEl.value = bodyEl.value.slice(0, sigStart) + sigPrefix + sig;
+          } else if (!bodyEl.value.trim()) {
+            bodyEl.value = sigPrefix + sig;
+          }
+        } else if (sigStart !== -1) {
+          bodyEl.value = bodyEl.value.slice(0, sigStart);
+        }
+      };
+      _applySignature(sel.options[sel.selectedIndex]);
+      sel.addEventListener('change', () => _applySignature(sel.options[sel.selectedIndex]));
+    }
   } catch(e) {}
 }
 

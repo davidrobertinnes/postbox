@@ -238,6 +238,79 @@ def bulk_move_messages(message_ids: list, dst_folder_id: int, db_path: str) -> i
     return moved
 
 
+def toggle_starred(message_db_id: int, db_path: str) -> bool:
+    """Toggle \\Flagged on a message. Returns True if now starred, False if now unstarred."""
+    conn = get_connection(db_path)
+    row = _load_message(conn, message_db_id)
+    if not row:
+        conn.close()
+        return False
+    flags = json.loads(row["flags"] or "[]")
+    was_starred = "\\Flagged" in flags
+    if was_starred:
+        _set_flags_db(conn, message_db_id, row["folder_id"], add=[], remove=["\\Flagged"])
+    else:
+        _set_flags_db(conn, message_db_id, row["folder_id"], add=["\\Flagged"], remove=[])
+    conn.commit()
+    uid, account_id, folder_name = row["uid"], row["account_id"], row["folder_name"]
+    now_starred = not was_starred
+    conn.close()
+
+    try:
+        client = _imap_connect(account_id, db_path)
+        if client:
+            client.select_folder(folder_name, readonly=False)
+            if now_starred:
+                client.add_flags([uid], ["\\Flagged"])
+            else:
+                client.remove_flags([uid], ["\\Flagged"])
+            client.logout()
+    except Exception as e:
+        log.error("toggle_starred uid=%d: %s", uid, e)
+    return now_starred
+
+
+def mark_all_read(message_ids: list, db_path: str) -> int:
+    """Mark a list of message DB IDs as read. Returns count marked."""
+    if not message_ids:
+        return 0
+
+    conn = get_connection(db_path)
+    placeholders = ",".join("?" * len(message_ids))
+    rows = conn.execute(f"""
+        SELECT m.id, m.uid, m.account_id, m.folder_id, m.flags, f.name as folder_name
+        FROM messages m JOIN folders f ON f.id = m.folder_id
+        WHERE m.id IN ({placeholders})
+    """, message_ids).fetchall()
+
+    unread = [r for r in rows if "\\Seen" not in json.loads(r["flags"] or "[]")]
+    if not unread:
+        conn.close()
+        return 0
+
+    for r in unread:
+        _set_flags_db(conn, r["id"], r["folder_id"], add=["\\Seen"], remove=[])
+    conn.commit()
+    conn.close()
+
+    from collections import defaultdict
+    by_folder = defaultdict(list)
+    for r in unread:
+        by_folder[(r["account_id"], r["folder_name"])].append(r["uid"])
+
+    for (account_id, folder_name), uids in by_folder.items():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(folder_name, readonly=False)
+                client.add_flags(uids, ["\\Seen"])
+                client.logout()
+        except Exception as e:
+            log.error("mark_all_read account=%d folder=%s: %s", account_id, folder_name, e)
+
+    return len(unread)
+
+
 def move_message(message_db_id: int, dst_folder_id: int, db_path: str) -> bool:
     conn = get_connection(db_path)
     row = _load_message(conn, message_db_id)

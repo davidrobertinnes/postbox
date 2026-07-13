@@ -24,9 +24,14 @@ const _EM_SORT_COLS = {
   date:      (a, b) => (a.date||'').localeCompare(b.date||''),
 };
 
+function _emStopAutoRefresh() {
+  if (_emAutoRefreshTimer) { clearInterval(_emAutoRefreshTimer); _emAutoRefreshTimer = null; }
+}
+
 // Called by navigate() for role-based folders (inbox/sent/drafts/trash/all)
 // accountId is optional — pass to pre-filter to a specific account (from sidebar account sections)
 async function pageEmails(folder, folderName, accountId = null) {
+  _emStopAutoRefresh();
   const _folderAlias = { junk: 'spam' };
   _emFolder        = _folderAlias[folder] || folder || 'inbox';
   _emFolderId      = null;
@@ -41,6 +46,9 @@ async function pageEmails(folder, folderName, accountId = null) {
   try {
     _emAccounts = await apiFetch('/api/accounts');
     await _emLoad();
+    if (_emFolder === 'inbox') {
+      _emAutoRefreshTimer = setInterval(() => { if (_emFolder === 'inbox') _emLoad(); }, 120000);
+    }
   } catch(e) {
     mc.innerHTML = `<div class="state-error">Failed to load: ${esc(e.message)}</div>`;
   }
@@ -48,6 +56,7 @@ async function pageEmails(folder, folderName, accountId = null) {
 
 // Called by sidebar folder list for specific folder by ID
 async function pageEmailsFolder(folderId, folderDisplayName) {
+  _emStopAutoRefresh();
   _emFolder         = null;
   _emFolderId       = folderId;
   _emFolderName     = folderDisplayName || 'Folder';
@@ -172,7 +181,8 @@ function _emTh(col, label, extraStyle) {
   return `<th onclick="emSort('${col}')" style="cursor:pointer;user-select:none${extraStyle ? ';' + extraStyle : ''}" class="${active ? 'sort-active' : ''}">${label}${arrow}</th>`;
 }
 
-let _emSearchTimer = null;
+let _emSearchTimer      = null;
+let _emAutoRefreshTimer = null;
 
 function _emRender(keepScroll) {
   const mc = document.getElementById('module-content');
@@ -195,6 +205,7 @@ function _emRender(keepScroll) {
       </div>
       ${_emCategoryPills()}` : ''}
       ${_emCategoryFilter && _emTotal > 0 ? `<button class="btn btn-outline btn-sm" onclick="_emBulkMove('${_emCategoryFilter}')">Move all ${_emTotal}&hellip;</button>` : ''}
+      ${(_emFolder === 'inbox' || _emFolderId) ? `<button class="btn btn-outline btn-sm" onclick="_emMarkAllRead()" title="Mark all as read">&#10003; All read</button>` : ''}
       <button class="btn btn-primary btn-sm" onclick="composeNew(${_emAccountId || 'null'})">&#9998; Compose</button>
     </div>
     <div class="em-list-panel">
@@ -207,11 +218,12 @@ function _emRender(keepScroll) {
             <th>Preview</th>
             ${_emTh('date','Date','min-width:90px')}
             <th style="width:22px"></th>
+            <th style="width:20px"></th>
           </tr></thead>
           <tbody>
             ${msgs.length
               ? msgs.map(_emRow).join('')
-              : `<tr><td colspan="6" class="em-empty">No messages in this folder</td></tr>`}
+              : `<tr><td colspan="7" class="em-empty">No messages in this folder</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -331,7 +343,9 @@ async function _emBulkMove(category) {
 function _emRow(msg) {
   const acctIdx  = _emAccounts.findIndex(a => a.id === msg.account_id);
   const colour   = _EM_COLOURS[Math.max(0, acctIdx) % _EM_COLOURS.length];
-  const isUnread = !JSON.parse(msg.flags || '[]').includes('\\Seen');
+  const flags    = JSON.parse(msg.flags || '[]');
+  const isUnread = !flags.includes('\\Seen');
+  const isStarred = flags.includes('\\Flagged');
   const displayFrom = msg.from_name || msg.from_addr || '(unknown)';
   const priority = msg.ai_priority;
   const category = msg.ai_category;
@@ -346,7 +360,26 @@ function _emRow(msg) {
     <td class="em-snippet">${esc(msg.snippet || '')}</td>
     <td class="em-date">${fmtDate(msg.date)}</td>
     <td>${msg.has_attachments ? '<span class="em-att-icon" title="Has attachments">&#128206;</span>' : ''}</td>
+    <td class="em-star-cell" onclick="event.stopPropagation();_emToggleStar(${msg.id},this)">${isStarred ? '<span class="em-star starred" title="Unstar">&#9733;</span>' : '<span class="em-star" title="Star">&#9734;</span>'}</td>
   </tr>`;
+}
+
+async function _emToggleStar(msgId, cell) {
+  try {
+    const r = await fetch(`/api/emails/${msgId}/star`, { method: 'POST' }).then(r => r.json());
+    if (!r.ok) return;
+    const starred = r.data.starred;
+    if (cell) cell.innerHTML = starred
+      ? '<span class="em-star starred" title="Unstar">&#9733;</span>'
+      : '<span class="em-star" title="Star">&#9734;</span>';
+    const msg = _emMessages.find(m => m.id === msgId);
+    if (msg) {
+      const flags = JSON.parse(msg.flags || '[]');
+      if (starred && !flags.includes('\\Flagged')) flags.push('\\Flagged');
+      if (!starred) { const i = flags.indexOf('\\Flagged'); if (i > -1) flags.splice(i, 1); }
+      msg.flags = JSON.stringify(flags);
+    }
+  } catch(e) {}
 }
 
 async function emOpen(msgId, threadId) {
@@ -466,6 +499,28 @@ function _emRenderDetail(msg, threadId) {
   moveBtn.onclick = () => _emMoveModal(msg);
   foot.appendChild(moveBtn);
 
+  const isStarredNow = JSON.parse(msg.flags || '[]').includes('\\Flagged');
+  const starBtn = document.createElement('button');
+  starBtn.className = 'btn btn-outline btn-sm';
+  starBtn.textContent = isStarredNow ? '★ Unstar' : '☆ Star';
+  starBtn.onclick = async () => {
+    try {
+      const r = await fetch(`/api/emails/${msg.id}/star`, { method: 'POST' }).then(r => r.json());
+      if (r.ok) {
+        starBtn.textContent = r.data.starred ? '★ Unstar' : '☆ Star';
+        const flags = JSON.parse(msg.flags || '[]');
+        if (r.data.starred && !flags.includes('\\Flagged')) flags.push('\\Flagged');
+        if (!r.data.starred) { const i = flags.indexOf('\\Flagged'); if (i > -1) flags.splice(i, 1); }
+        msg.flags = JSON.stringify(flags);
+        const starCell = document.querySelector(`tr[data-msgid="${msg.id}"] .em-star-cell`);
+        if (starCell) starCell.innerHTML = r.data.starred
+          ? '<span class="em-star starred" title="Unstar">&#9733;</span>'
+          : '<span class="em-star" title="Star">&#9734;</span>';
+      }
+    } catch(e) {}
+  };
+  foot.appendChild(starBtn);
+
   const unreadBtn = document.createElement('button');
   unreadBtn.className = 'btn btn-outline btn-sm';
   unreadBtn.textContent = 'Mark Unread';
@@ -486,6 +541,32 @@ async function _emMarkUnread(msgId) {
     if (row) row.classList.add('unread');
     detClose();
     toast('Marked as unread');
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+}
+
+async function _emMarkAllRead() {
+  const payload = {};
+  if (_emFolderId) {
+    payload.folder_id = _emFolderId;
+  } else {
+    payload.folder_role = _emFolder;
+  }
+  if (_emAccountId) payload.account_id = _emAccountId;
+  try {
+    const r = await fetch('/api/emails/mark_all_read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(r => r.json());
+    if (!r.ok) { toast(r.error || 'Failed', 'err'); return; }
+    const n = r.data.marked;
+    _emMessages = _emMessages.map(m => {
+      const flags = JSON.parse(m.flags || '[]');
+      if (!flags.includes('\\Seen')) flags.push('\\Seen');
+      return { ...m, flags: JSON.stringify(flags) };
+    });
+    _emRender(true);
+    if (n > 0) toast(`Marked ${n} message${n !== 1 ? 's' : ''} as read`);
   } catch(e) { toast('Failed: ' + e.message, 'err'); }
 }
 
@@ -618,17 +699,54 @@ async function _emLoadActions(threadId) {
 }
 
 async function _emAiDraft(msg, threadId) {
-  const intent = prompt('Describe your reply:\n(e.g. "Confirm the meeting", "Decline politely", "Ask for more info")');
-  if (!intent) return;
-  try {
-    const r = await fetch('/api/ai/draft', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ thread_id: threadId || msg.message_id, intent, account_id: msg.account_id }),
-    }).then(r => r.json());
-    if (r.ok && r.data && r.data.draft) { composeReply(msg, r.data.draft); }
-    else { toast(r.error || 'Draft failed', 'err'); }
-  } catch(e) { toast('AI draft failed: ' + e.message, 'err'); }
+  const bd = document.createElement('div');
+  bd.className = 'modal-bd';
+  bd.style.display = 'flex';
+  bd.innerHTML = `
+    <div class="modal-box" style="width:480px">
+      <div class="modal-hdr">
+        <span>&#10022; Draft with AI</span>
+        <button class="det-close" onclick="this.closest('.modal-bd').remove()">&#x2715;</button>
+      </div>
+      <div class="modal-body" style="padding:16px">
+        <label style="font-size:13px;color:var(--ink2);display:block;margin-bottom:8px">Describe your reply:</label>
+        <textarea id="ai-draft-intent" class="cmp-body" placeholder="e.g. Confirm the meeting, decline politely, ask for more info…" style="height:90px;resize:vertical"></textarea>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline btn-sm" onclick="this.closest('.modal-bd').remove()">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="ai-draft-go-btn">Generate Draft &#8594;</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+  bd.addEventListener('click', e => { if (e.target === bd) bd.remove(); });
+
+  const textarea = bd.querySelector('#ai-draft-intent');
+  const btn      = bd.querySelector('#ai-draft-go-btn');
+  textarea.focus();
+
+  const _generate = async () => {
+    const intent = textarea.value.trim();
+    if (!intent) { toast('Describe your reply', 'err'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+      const r = await fetch('/api/ai/draft', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ thread_id: threadId || msg.message_id, intent, account_id: msg.account_id }),
+      }).then(r => r.json());
+      bd.remove();
+      if (r.ok && r.data && r.data.draft) { composeReply(msg, r.data.draft); }
+      else { toast(r.error || 'Draft failed', 'err'); }
+    } catch(e) {
+      toast('AI draft failed: ' + e.message, 'err');
+      btn.disabled = false;
+      btn.textContent = 'Generate Draft →';
+    }
+  };
+
+  btn.onclick = _generate;
+  textarea.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) _generate(); });
 }
 
 function _emParseAddrs(json_str) {

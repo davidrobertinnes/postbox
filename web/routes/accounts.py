@@ -15,7 +15,7 @@ def api_accounts():
     conn = get_connection(db())
     rows = dict_rows(conn.execute(
         "SELECT id, name, email, provider, imap_host, imap_port, imap_ssl, "
-        "smtp_host, smtp_port, smtp_ssl, username, auth_type, last_sync, active, needs_reauth "
+        "smtp_host, smtp_port, smtp_ssl, username, auth_type, last_sync, active, needs_reauth, signature "
         "FROM accounts ORDER BY id"
     ).fetchall())
     # Attach folder counts
@@ -155,7 +155,7 @@ def api_account_update(aid: int):
         return err("Not found", 404)
 
     fields = ["name", "email", "provider", "imap_host", "imap_port", "imap_ssl",
-              "smtp_host", "smtp_port", "smtp_ssl", "username"]
+              "smtp_host", "smtp_port", "smtp_ssl", "username", "signature"]
     updates = {k: data[k] for k in fields if k in data}
     if updates:
         set_clause = ", ".join(f"{k}=:{k}" for k in updates)

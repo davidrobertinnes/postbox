@@ -367,9 +367,20 @@ async function emOpen(msgId, threadId) {
   }
 }
 
+function _emFmtDetailDate(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+      + ' ' + d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+  } catch(e) { return iso; }
+}
+
 function _emRenderDetail(msg, threadId) {
   const toList  = _emParseAddrs(msg.to_addrs);
   const toStr   = toList.map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', ');
+  const ccList  = _emParseAddrs(msg.cc_addrs);
+  const ccStr   = ccList.map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', ');
   const fromStr = msg.from_name ? `${msg.from_name} <${msg.from_addr}>` : msg.from_addr;
   const hasHtml = msg.body_html && msg.body_html.trim();
 
@@ -385,7 +396,8 @@ function _emRenderDetail(msg, threadId) {
     <div class="em-meta-strip">
       <div class="em-meta-row"><span class="em-meta-label">From</span><span class="em-meta-val">${esc(fromStr)}</span></div>
       <div class="em-meta-row"><span class="em-meta-label">To</span><span class="em-meta-val">${esc(toStr)}</span></div>
-      <div class="em-meta-row"><span class="em-meta-label">Date</span><span class="em-meta-val">${fmtDate(msg.date)}</span></div>
+      ${ccStr ? `<div class="em-meta-row"><span class="em-meta-label">CC</span><span class="em-meta-val">${esc(ccStr)}</span></div>` : ''}
+      <div class="em-meta-row"><span class="em-meta-label">Date</span><span class="em-meta-val">${_emFmtDetailDate(msg.date)}</span></div>
     </div>
     ${msg.attachments && msg.attachments.length ? `<div class="em-attachments" id="em-att-bar"></div>` : ''}
     ${msg._fetch_error
@@ -397,8 +409,16 @@ function _emRenderDetail(msg, threadId) {
   if (hasHtml) {
     const iframe = document.getElementById('em-iframe');
     iframe.srcdoc = `<html><head><base target="_blank"><style>body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#1A2E45;padding:12px}a{color:#185FA5}img{max-width:100%}</style></head><body>${msg.body_html}</body></html>`;
+    const _resizeIframe = () => {
+      try {
+        const h = iframe.contentWindow.document.body.scrollHeight;
+        if (h > 0) iframe.style.height = (h + 40) + 'px';
+      } catch(e) {}
+    };
     iframe.onload = () => {
-      try { iframe.style.height = (iframe.contentWindow.document.body.scrollHeight + 40) + 'px'; } catch(e) {}
+      _resizeIframe();
+      // Re-check after images may have loaded
+      setTimeout(_resizeIframe, 800);
     };
   }
 

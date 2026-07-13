@@ -1,5 +1,26 @@
 # Dogbox Mailman — Session Notes
 
+## Current state (2026-07-14)
+
+### Session 2026-07-14 — bug fixes across sync, preview panel, and flags
+
+- DB lock contention fixed — sync functions now use three-phase pattern (read DB → IMAP → write DB); connection no longer held open during network I/O
+- Junk folder was always empty — `navigate('junk')` passed `folder=junk` but DB role is `spam`; aliased in `pageEmails`
+- Attachment badge false positives fixed — `_has_attachments` heuristic now skips `ALTERNATIVE` and `RELATED` subtypes; body fetch corrects `has_attachments` from actual parsed attachments
+- Preview panel: AI summary/actions boxes hidden until content arrives (CSS `display:none` + JS show on load)
+- Preview panel: date now shows full date+time; CC field added to meta strip; iframe height re-measured 800ms after load for images
+- Thread ID chaining fixed for 3+ message chains — parent lookup resolves root thread_id
+- Flags format fixed in `mark_read` (JSON parse, not substring) and `mark_unread` (dead entries removed)
+- Unread row styling in JS now uses `JSON.parse(flags).includes('\\Seen')` not substring match
+- DB indices added on `messages(account_id, folder_id)`, `messages(date)`, `messages(thread_id)`, `folders(role)`
+
+### Next items (priority order)
+
+1. **Google verification** — submit for production publishing to remove 7-day token limit and 100-user cap
+2. **Microsoft OAuth testing** — get Azure app registered and test end-to-end (deferred — Azure requires credit card)
+
+---
+
 ## Current state (2026-07-12)
 
 ### Session 2026-07-12 (2) — category filtering, bulk move, triage fallback, bug fixes

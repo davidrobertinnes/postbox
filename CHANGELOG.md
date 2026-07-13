@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- core/imap_sync.py: fixed DB lock contention — `sync_all_folders_messages` and `sync_inbox` now use three-phase pattern (read DB → close → IMAP fetch → reopen → write); connection was previously held open for the entire IMAP session causing `database is locked` errors under concurrent multi-account sync
+- web/static/js/emails.js: fixed Junk folder showing empty — `pageEmails('junk')` was sending `folder=junk` to the API but DB stores role as `spam`; aliased via `_folderAlias` map
+- core/imap_sync.py: fixed false attachment badges — `_has_attachments` now skips `ALTERNATIVE` and `RELATED` multipart subtypes (plain+html and inline images); `fetch_body` now corrects `has_attachments` on the message row from actual parsed attachment count
+- web/static/js/emails.js, web/static/js/emails.js: AI summary and actions boxes in preview panel now start hidden (`style="display:none"`) and are shown only when AI content arrives; previously rendered as empty placeholder boxes pushing body out of view
+- web/static/js/emails.js: preview panel date now shows full date+time (`_emFmtDetailDate`) instead of abbreviated `fmtDate` label ("Yesterday", "12 Jul")
+- web/static/js/emails.js: CC field now shown in preview panel meta strip when present
+- web/static/js/emails.js: iframe height re-measured 800ms after `onload` to include images that render late
+- core/imap_sync.py: fixed thread chaining for 3+ message chains — `_store_envelope` now looks up parent message's `thread_id` so A→B→C all share A's thread_id; previously C got `thread_id=B` fragmenting the conversation
+- core/imap_actions.py: `mark_read` now parses flags JSON properly (`json.loads`) instead of substring-matching the raw JSON string
+- core/imap_actions.py: `mark_unread` remove list cleaned up — removed dead entries `"\\\\Seen"` and `"Seen"` that never matched after JSON parse
+- web/static/js/emails.js: `_emRow` unread check now uses `JSON.parse(msg.flags).includes('\\Seen')` instead of raw string substring match
+- core/database.py: added DB indices on `messages(account_id, folder_id)`, `messages(date)`, `messages(thread_id)`, `folders(role)` — previously all folder loads were full table scans
+
 - web/static/js/emails.js: fixed search input losing focus after each keypress — capture focus state before `mc.innerHTML` replacement and restore with cursor at end after render
 - web/static/js/emails.js: debounced search input 300ms to avoid firing an API call on every keystroke
 - web/static/js/emails.js: fixed `scrollTop` captured but never restored in `_emRender(keepScroll)` — sort and move operations now preserve scroll position

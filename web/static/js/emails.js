@@ -442,6 +442,12 @@ function _emRenderDetail(msg, threadId) {
   replyBtn.onclick = () => composeReply(msg);
   foot.appendChild(replyBtn);
 
+  const replyAllBtn = document.createElement('button');
+  replyAllBtn.className = 'btn btn-outline btn-sm';
+  replyAllBtn.textContent = 'Reply All';
+  replyAllBtn.onclick = () => composeReplyAll(msg);
+  foot.appendChild(replyAllBtn);
+
   const aiBtn = document.createElement('button');
   aiBtn.className = 'btn btn-outline btn-sm';
   aiBtn.textContent = 'Draft with AI';

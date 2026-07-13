@@ -33,6 +33,7 @@ def api_send():
         subject=subject,
         body=body,
         cc=data.get("cc"),
+        bcc=data.get("bcc"),
         reply_to_msg_id=data.get("reply_to_msg_id"),
         references=data.get("references"),
     )

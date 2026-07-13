@@ -17,6 +17,7 @@ def send_message(
     subject: str,
     body: str,
     cc: str | list[str] | None = None,
+    bcc: str | list[str] | None = None,
     reply_to_msg_id: str | None = None,
     references: str | None = None,
     body_html: str | None = None,
@@ -47,9 +48,10 @@ def send_message(
         if not password:
             return False, "No password stored for this account"
 
-    to_list = [to] if isinstance(to, str) else to
-    cc_list = [cc] if isinstance(cc, str) else (cc or [])
-    all_rcpt = to_list + cc_list
+    to_list  = [to]  if isinstance(to,  str) else (to  or [])
+    cc_list  = [cc]  if isinstance(cc,  str) else (cc  or [])
+    bcc_list = [bcc] if isinstance(bcc, str) else (bcc or [])
+    all_rcpt = to_list + cc_list + bcc_list
 
     msg = MIMEMultipart("alternative") if body_html else MIMEText(body, "plain", "utf-8")
 

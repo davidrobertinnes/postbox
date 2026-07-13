@@ -2,6 +2,14 @@
 
 ## Current state (2026-07-14)
 
+### Session 2026-07-14 (3) — compose: file attachments
+
+- Attach button in compose footer opens file picker (multi-file supported)
+- Selected files shown as removable chips above the footer
+- FormData replaces JSON on send so binary data carries correctly
+- Backend builds multipart/mixed with body as multipart/alternative sub-part
+- Files cleared on modal open/close; backend accepts both form-data and JSON
+
 ### Session 2026-07-14 (2) — compose: CC, BCC, Reply All
 
 - CC field added to compose modal (always visible)

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- web/static/js/compose.js: Attach button in compose footer opens hidden file input (multiple files); selected files shown as removable chips in bar above footer; _cmpFiles reset on open and close
+- web/static/js/compose.js: send switched from JSON to FormData so binary file data is carried correctly
+- web/routes/compose.py: accepts multipart/form-data or JSON; reads attached files via request.files.getlist('attachments')
+- core/smtp_send.py: attachments param added (list of filename/content_type/bytes tuples); wraps message in multipart/mixed when attachments present, body as multipart/alternative sub-part; MIMEBase + encode_base64 per attachment
+- web/static/postbox.css: .cmp-attach-bar, .cmp-att-chip, .cmp-att-remove, .cmp-att-size styles for compose attachment chips
+
 - web/static/js/compose.js: added CC field (always visible) and BCC field (hidden, revealed by "+ BCC" toggle in modal header)
 - web/static/js/compose.js: added `composeReplyAll()` — To=original sender, CC=original To+CC recipients minus own account email
 - web/static/js/compose.js: modal title now reflects context (New Message / Reply / Reply All / Forward) instead of always "New Message"

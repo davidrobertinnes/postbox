@@ -175,18 +175,13 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
     """
     Fetch message headers for the INBOX folder. Returns number of new messages stored.
     """
+    # Phase 1: read what we need, then release the DB connection
     conn = get_connection(db_path)
     row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
     if not row:
         conn.close()
         return 0
     account = dict(row)
-    password = None
-    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
-        password = get_password(account_id)
-        if not password:
-            conn.close()
-            return 0
 
     folder_row = conn.execute(
         "SELECT * FROM folders WHERE account_id=? AND (role='inbox' OR LOWER(name)='inbox') LIMIT 1",
@@ -197,48 +192,58 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
         return 0
 
     folder_id = folder_row["id"]
-    new_count = 0
+    existing = set(r[0] for r in conn.execute(
+        "SELECT uid FROM messages WHERE account_id=? AND folder_id=?",
+        (account_id, folder_id)
+    ).fetchall())
+    conn.close()
 
+    password = None
+    if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
+        password = get_password(account_id)
+        if not password:
+            return 0
+
+    # Phase 2: IMAP fetch — no DB connection open
+    results = []
+    total_uids = 0
+    unseen_count = 0
     try:
         client = _make_client(account, password)
         client.select_folder("INBOX", readonly=True)
-
-        # Fetch most recent UIDs
         uids = client.search("ALL")
         if not uids:
             client.logout()
-            conn.close()
             return 0
-
-        # Only fetch UIDs we haven't seen
-        existing = set(r[0] for r in conn.execute(
-            "SELECT uid FROM messages WHERE account_id=? AND folder_id=?",
-            (account_id, folder_id)
-        ).fetchall())
-        new_uids = [u for u in uids if u not in existing]
-        new_uids = new_uids[-max_msgs:]  # limit to most recent
-
+        total_uids = len(uids)
+        new_uids = [u for u in uids if u not in existing][-max_msgs:]
         if new_uids:
             fetch_data = client.fetch(new_uids, ["ENVELOPE", "FLAGS", "RFC822.SIZE", "BODYSTRUCTURE"])
-            for uid, data in fetch_data.items():
-                _store_envelope(conn, account_id, folder_id, uid, data)
-                new_count += 1
+            results = list(fetch_data.items())
+        unseen_count = len(client.search("UNSEEN"))
+        client.logout()
+    except Exception as e:
+        log.error("sync_inbox account=%d: %s", account_id, e)
+        return 0
 
-        # Update unread count
-        unseen = client.search("UNSEEN")
+    # Phase 3: write results in a short-lived connection
+    new_count = 0
+    conn = get_connection(db_path)
+    try:
+        for uid, data in results:
+            _store_envelope(conn, account_id, folder_id, uid, data)
+            new_count += 1
         conn.execute(
             "UPDATE folders SET unread_count=?, message_count=? WHERE id=?",
-            (len(unseen), len(uids), folder_id)
+            (unseen_count, total_uids, folder_id)
         )
         conn.execute(
             "UPDATE accounts SET last_sync=datetime('now','localtime') WHERE id=?",
             (account_id,)
         )
         conn.commit()
-        client.logout()
-
     except Exception as e:
-        log.error("sync_inbox account=%d: %s", account_id, e)
+        log.error("sync_inbox write account=%d: %s", account_id, e)
     finally:
         conn.close()
 
@@ -247,23 +252,38 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
 
 def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100) -> int:
     """Sync message headers for all folders in one IMAP connection."""
+    # Phase 1: read account + folders + existing UIDs, then release the DB connection
     conn = get_connection(db_path)
     row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
     if not row:
         conn.close()
         return 0
     account = dict(row)
+    folders = [dict(r) for r in conn.execute(
+        "SELECT * FROM folders WHERE account_id=?", (account_id,)
+    ).fetchall()]
+    existing_by_folder = {
+        f["id"]: set(
+            r[0] for r in conn.execute(
+                "SELECT uid FROM messages WHERE account_id=? AND folder_id=?",
+                (account_id, f["id"])
+            ).fetchall()
+        )
+        for f in folders
+    }
+    conn.close()
+
     password = None
     if account.get("auth_type") not in _OAUTH_AUTH_TYPES:
         password = get_password(account_id)
         if not password:
-            conn.close()
             return 0
 
-    folders = conn.execute(
-        "SELECT * FROM folders WHERE account_id=?", (account_id,)
-    ).fetchall()
-
+    # Phase 2: IMAP fetch — no DB connection open
+    # results: list of (folder_id, uid, imap_data)
+    # folder_counts: folder_id -> (message_count, unread_count or None)
+    results = []
+    folder_counts = {}
     total_new = 0
     try:
         client = _make_client(account, password)
@@ -276,51 +296,60 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
                 client.select_folder(folder_name, readonly=True)
                 uids = client.search("ALL")
                 if not uids:
-                    conn.execute(
-                        "UPDATE folders SET message_count=0 WHERE id=?", (folder_id,)
-                    )
+                    folder_counts[folder_id] = (0, 0)
                     continue
 
-                existing = set(
-                    r[0] for r in conn.execute(
-                        "SELECT uid FROM messages WHERE account_id=? AND folder_id=?",
-                        (account_id, folder_id)
-                    ).fetchall()
-                )
-                new_uids = [u for u in uids if u not in existing]
-                new_uids = new_uids[-max_msgs:]
+                existing = existing_by_folder.get(folder_id, set())
+                new_uids = [u for u in uids if u not in existing][-max_msgs:]
 
                 if new_uids:
                     fetch_data = client.fetch(new_uids, ["ENVELOPE", "FLAGS", "RFC822.SIZE", "BODYSTRUCTURE"])
                     for uid, data in fetch_data.items():
-                        _store_envelope(conn, account_id, folder_id, uid, data)
+                        results.append((folder_id, uid, data))
                         total_new += 1
 
                 try:
                     unseen = client.search("UNSEEN")
-                    conn.execute(
-                        "UPDATE folders SET unread_count=?, message_count=? WHERE id=?",
-                        (len(unseen), len(uids), folder_id)
-                    )
+                    folder_counts[folder_id] = (len(uids), len(unseen))
                 except Exception:
-                    conn.execute(
-                        "UPDATE folders SET message_count=? WHERE id=?",
-                        (len(uids), folder_id)
-                    )
+                    folder_counts[folder_id] = (len(uids), None)
 
             except Exception as e:
                 log.debug("sync folder '%s' account=%d: %s", folder_name, account_id, e)
                 continue
 
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+    except Exception as e:
+        log.error("sync_all_folders_messages account=%d: %s", account_id, e)
+        return total_new
+
+    # Phase 3: write results in a short-lived connection
+    conn = get_connection(db_path)
+    try:
+        for folder_id, uid, data in results:
+            _store_envelope(conn, account_id, folder_id, uid, data)
+        for folder_id, (msg_count, unread_count) in folder_counts.items():
+            if unread_count is not None:
+                conn.execute(
+                    "UPDATE folders SET unread_count=?, message_count=? WHERE id=?",
+                    (unread_count, msg_count, folder_id)
+                )
+            else:
+                conn.execute(
+                    "UPDATE folders SET message_count=? WHERE id=?",
+                    (msg_count, folder_id)
+                )
         conn.execute(
             "UPDATE accounts SET last_sync=datetime('now','localtime') WHERE id=?",
             (account_id,)
         )
         conn.commit()
-        client.logout()
-
     except Exception as e:
-        log.error("sync_all_folders_messages account=%d: %s", account_id, e)
+        log.error("sync_all_folders_messages write account=%d: %s", account_id, e)
     finally:
         conn.close()
 

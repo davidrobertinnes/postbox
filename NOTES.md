@@ -2,7 +2,15 @@
 
 ## Current state (2026-07-14)
 
-### Session 2026-07-14 — bug fixes across sync, preview panel, and flags
+### Session 2026-07-14 (2) — compose: CC, BCC, Reply All
+
+- CC field added to compose modal (always visible)
+- BCC field added (hidden behind "+ BCC" toggle in header)
+- Reply All added — To=sender, CC=original To+CC minus own address, button in detail footer
+- Modal title now reflects context: New Message / Reply / Reply All / Forward
+- BCC wired through backend (smtp_send.py + compose.py); SMTP envelope only, not headers
+
+### Session 2026-07-14 (1) — bug fixes across sync, preview panel, and flags
 
 - DB lock contention fixed — sync functions now use three-phase pattern (read DB → IMAP → write DB); connection no longer held open during network I/O
 - Junk folder was always empty — `navigate('junk')` passed `folder=junk` but DB role is `spam`; aliased in `pageEmails`

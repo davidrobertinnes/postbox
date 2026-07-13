@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- web/static/js/compose.js: added CC field (always visible) and BCC field (hidden, revealed by "+ BCC" toggle in modal header)
+- web/static/js/compose.js: added `composeReplyAll()` — To=original sender, CC=original To+CC recipients minus own account email
+- web/static/js/compose.js: modal title now reflects context (New Message / Reply / Reply All / Forward) instead of always "New Message"
+- web/static/js/emails.js: Reply All button added to email detail footer
+- web/routes/compose.py: `bcc` field passed from request body to `send_message()`
+- core/smtp_send.py: `bcc` parameter added; BCC addresses included in SMTP envelope recipients but omitted from message headers per RFC 5321
+- web/static/postbox.css: `.cmp-box` widens compose modal to 680px; `.cmp-bcc-btn` style for the BCC toggle
+
 - core/imap_sync.py: fixed DB lock contention — `sync_all_folders_messages` and `sync_inbox` now use three-phase pattern (read DB → close → IMAP fetch → reopen → write); connection was previously held open for the entire IMAP session causing `database is locked` errors under concurrent multi-account sync
 - web/static/js/emails.js: fixed Junk folder showing empty — `pageEmails('junk')` was sending `folder=junk` to the API but DB stores role as `spam`; aliased via `_folderAlias` map
 - core/imap_sync.py: fixed false attachment badges — `_has_attachments` now skips `ALTERNATIVE` and `RELATED` multipart subtypes (plain+html and inline images); `fetch_body` now corrects `has_attachments` on the message row from actual parsed attachment count

@@ -385,18 +385,37 @@ async function _emToggleStar(msgId, cell) {
 }
 
 async function emOpen(msgId, threadId) {
+  // If it's a draft, open compose instead of detail panel
+  const listMsg = _emMessages.find(m => m.id === msgId);
+  if (listMsg && JSON.parse(listMsg.flags || '[]').includes('\\Draft')) {
+    try {
+      const msg = await apiFetch(`/api/emails/${msgId}`);
+      composeFromDraft(msg);
+    } catch(e) { toast('Could not open draft: ' + e.message, 'err'); }
+    return;
+  }
+
   detOpen('');
   try {
+    if (threadId) {
+      const threadMsgs = await apiFetch(`/api/threads/${encodeURIComponent(threadId)}`);
+      if (threadMsgs.length > 1) {
+        const selMsg = threadMsgs.find(m => m.id === msgId) || threadMsgs[threadMsgs.length - 1];
+        document.getElementById('det-title').textContent = selMsg.subject || '(no subject)';
+        await _emRenderThread(threadMsgs, msgId, threadId);
+        fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
+        document.querySelector(`tr[data-msgid="${msgId}"]`)?.classList.remove('unread');
+        return;
+      }
+    }
+    // Single message view
     const msg = await apiFetch(`/api/emails/${msgId}`);
     document.getElementById('det-title').textContent = msg.subject || '(no subject)';
     _emRenderDetail(msg, threadId);
     if (threadId) _emLoadSummary(threadId);
     if (threadId) _emLoadActions(threadId);
-    // Write \Seen back to IMAP server (fire and forget)
     fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
-    // Update row styling immediately
-    const row = document.querySelector(`tr[data-msgid="${msgId}"]`);
-    if (row) row.classList.remove('unread');
+    document.querySelector(`tr[data-msgid="${msgId}"]`)?.classList.remove('unread');
   } catch(e) {
     document.getElementById('det-body').innerHTML = `<div class="state-error">${esc(e.message)}</div>`;
   }
@@ -818,6 +837,191 @@ async function _emAiDraft(msg, threadId) {
 
   btn.onclick = _generate;
   textarea.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) _generate(); });
+}
+
+// ── Thread view ───────────────────────────────────────────────────────────────
+
+async function _emRenderThread(msgs, selectedId, threadId) {
+  const det = document.getElementById('det-body');
+  det.innerHTML = `
+    <div class="ai-summary-box" id="ai-summary-box" style="display:none">
+      <div class="ai-summary-label">&#10022; AI Summary</div>
+      <div id="ai-summary-text"></div>
+    </div>
+    <div class="ai-actions-box" id="ai-actions-box" style="display:none">
+      <div class="ai-actions-label">&#9889; Actions</div>
+      <div id="ai-actions-list"></div>
+    </div>
+    <div class="th-count">${msgs.length} messages in thread</div>
+    <div class="th-list" id="th-list"></div>`;
+  _emLoadSummary(threadId);
+  _emLoadActions(threadId);
+
+  const list = document.getElementById('th-list');
+  const expandId = msgs.find(m => m.id === selectedId) ? selectedId : msgs[msgs.length - 1].id;
+
+  for (const msg of msgs) {
+    const isExpanded = msg.id === expandId;
+    const fromDisp   = msg.from_name || msg.from_addr || '?';
+    const initial    = (fromDisp[0] || '?').toUpperCase();
+    const isUnread   = !JSON.parse(msg.flags || '[]').includes('\\Seen');
+
+    const card = document.createElement('div');
+    card.className = `th-msg${isExpanded ? ' expanded' : ' collapsed'}${isUnread ? ' unread' : ''}`;
+    card.dataset.mid     = msg.id;
+    card.dataset.snippet = msg.snippet || '';
+    card.innerHTML = `
+      <div class="th-hdr" onclick="_emToggleThreadMsg(${msg.id})">
+        <span class="th-avatar">${esc(initial)}</span>
+        <div class="th-hdr-main">
+          <span class="th-from">${esc(fromDisp)}</span>
+          ${!isExpanded ? `<span class="th-snippet">${esc(msg.snippet || '')}</span>` : ''}
+        </div>
+        <span class="th-date">${fmtDate(msg.date)}</span>
+      </div>
+      <div class="th-body" id="th-body-${msg.id}"${isExpanded ? '' : ' style="display:none"'}>
+        ${isExpanded ? '<div class="th-loading">Loading…</div>' : ''}
+      </div>`;
+    list.appendChild(card);
+  }
+
+  // Fetch and render expanded message (with body + attachments)
+  try {
+    const fullMsg = await apiFetch(`/api/emails/${expandId}`);
+    const bodyEl  = document.getElementById(`th-body-${expandId}`);
+    if (bodyEl) _emRenderThreadBody(fullMsg, bodyEl);
+    _emRenderThreadFoot(fullMsg, threadId);
+  } catch(e) {
+    const bodyEl = document.getElementById(`th-body-${expandId}`);
+    if (bodyEl) bodyEl.innerHTML = `<div class="state-error">Failed to load message</div>`;
+  }
+}
+
+function _emRenderThreadBody(msg, container) {
+  const toStr  = _emParseAddrs(msg.to_addrs).map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', ');
+  const ccStr  = _emParseAddrs(msg.cc_addrs).map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', ');
+  const fromStr = msg.from_name ? `${msg.from_name} <${msg.from_addr}>` : msg.from_addr;
+  const hasHtml = msg.body_html && msg.body_html.trim();
+
+  container.innerHTML = `
+    <div class="em-meta-strip">
+      <div class="em-meta-row"><span class="em-meta-label">From</span><span class="em-meta-val">${esc(fromStr)}</span></div>
+      <div class="em-meta-row"><span class="em-meta-label">To</span><span class="em-meta-val">${esc(toStr)}</span></div>
+      ${ccStr ? `<div class="em-meta-row"><span class="em-meta-label">CC</span><span class="em-meta-val">${esc(ccStr)}</span></div>` : ''}
+      <div class="em-meta-row"><span class="em-meta-label">Date</span><span class="em-meta-val">${_emFmtDetailDate(msg.date)}</span></div>
+    </div>
+    ${msg.attachments && msg.attachments.length ? `<div class="em-attachments" id="th-att-${msg.id}"></div>` : ''}
+    ${msg._fetch_error
+      ? `<div class="state-error" style="margin:12px 0">${esc(msg._fetch_error)}</div>`
+      : hasHtml
+        ? `<iframe class="em-body-frame" id="th-iframe-${msg.id}" sandbox="allow-same-origin allow-popups" style="height:300px"></iframe>`
+        : `<pre class="em-body-text">${esc(msg.body_text || '(empty)')}</pre>`}`;
+
+  if (hasHtml) {
+    const iframe = document.getElementById(`th-iframe-${msg.id}`);
+    iframe.srcdoc = `<html><head><base target="_blank"><style>body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#1A2E45;padding:12px}a{color:#185FA5}img{max-width:100%}</style></head><body>${msg.body_html}</body></html>`;
+    const _resize = () => {
+      try { const h = iframe.contentWindow.document.body.scrollHeight; if (h > 0) iframe.style.height = (h + 40) + 'px'; } catch(e) {}
+    };
+    iframe.onload = () => { _resize(); setTimeout(_resize, 800); };
+  }
+
+  const attBar = document.getElementById(`th-att-${msg.id}`);
+  if (attBar && msg.attachments) {
+    for (const a of msg.attachments) {
+      const chip = document.createElement('span');
+      chip.className = 'em-att-chip';
+      chip.innerHTML = `&#128206; ${esc(a.filename)}<span class="em-att-size">${_emFmtSize(a.size)}</span>`;
+      chip.addEventListener('click', () => _emDownloadAtt(msg.id, a.id, a.filename));
+      attBar.appendChild(chip);
+    }
+  }
+}
+
+function _emRenderThreadFoot(msg, threadId) {
+  const foot = document.getElementById('det-foot');
+  if (!foot) return;
+  foot.innerHTML = '';
+
+  const btn = (label, primary, onclick) => {
+    const b = document.createElement('button');
+    b.className = `btn ${primary ? 'btn-primary' : 'btn-outline'} btn-sm`;
+    b.textContent = label;
+    b.onclick = onclick;
+    foot.appendChild(b);
+    return b;
+  };
+
+  btn('Reply',        true,  () => composeReply(msg));
+  btn('Reply All',    false, () => composeReplyAll(msg));
+  btn('Draft with AI',false, () => _emAiDraft(msg, threadId));
+  btn('Forward',      false, () => composeForward(msg));
+  btn('Move to…',false, () => _emMoveModal(msg));
+
+  const isStarred = JSON.parse(msg.flags || '[]').includes('\\Flagged');
+  const starBtn = btn(isStarred ? '★ Unstar' : '☆ Star', false, async () => {
+    const r = await fetch(`/api/emails/${msg.id}/star`, { method: 'POST' }).then(r => r.json()).catch(() => null);
+    if (r?.ok) starBtn.textContent = r.data.starred ? '★ Unstar' : '☆ Star';
+  });
+
+  btn('Mark Unread', false, () => _emMarkUnread(msg.id));
+
+  if (msg.folder_role === 'spam') {
+    btn('Not Spam', false, async () => {
+      const r = await fetch(`/api/emails/${msg.id}/unspam`, { method: 'POST' }).then(r => r.json());
+      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Moved to Inbox'); }
+      else toast(r.error || 'Failed', 'err');
+    });
+  } else {
+    btn('Spam', false, async () => {
+      const r = await fetch(`/api/emails/${msg.id}/spam`, { method: 'POST' }).then(r => r.json());
+      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Marked as spam'); }
+      else toast(r.error || 'Failed', 'err');
+    });
+  }
+
+  const delBtn = btn('Delete', false, () => _emTrash(msg.id, delBtn));
+  delBtn.classList.add('btn-danger');
+}
+
+async function _emToggleThreadMsg(msgId) {
+  const card   = document.querySelector(`.th-msg[data-mid="${msgId}"]`);
+  const body   = document.getElementById(`th-body-${msgId}`);
+  if (!card || !body) return;
+
+  const isExpanded = card.classList.contains('expanded');
+  const hdrMain    = card.querySelector('.th-hdr-main');
+
+  if (isExpanded) {
+    card.classList.replace('expanded', 'collapsed');
+    body.style.display = 'none';
+    if (hdrMain && !hdrMain.querySelector('.th-snippet')) {
+      const snipEl = document.createElement('span');
+      snipEl.className = 'th-snippet';
+      snipEl.textContent = card.dataset.snippet || '';
+      hdrMain.appendChild(snipEl);
+    }
+    return;
+  }
+
+  // Expand
+  card.classList.replace('collapsed', 'expanded');
+  body.style.display = '';
+  hdrMain?.querySelector('.th-snippet')?.remove();
+
+  if (!body.innerHTML.trim() || body.querySelector('.th-loading')) {
+    body.innerHTML = '<div class="th-loading">Loading…</div>';
+    try {
+      const msg = await apiFetch(`/api/emails/${msgId}`);
+      _emRenderThreadBody(msg, body);
+      _emRenderThreadFoot(msg, msg.thread_id);
+      fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
+      card.classList.remove('unread');
+      document.querySelector(`tr[data-msgid="${msgId}"]`)?.classList.remove('unread');
+    } catch(e) {
+      body.innerHTML = `<div class="state-error">Failed to load: ${esc(e.message)}</div>`;
+    }
+  }
 }
 
 function _emParseAddrs(json_str) {

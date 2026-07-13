@@ -138,6 +138,10 @@ def initialise_database(db_path: str) -> None:
         c.execute("ALTER TABLE messages ADD COLUMN receipt_sent INTEGER DEFAULT 0")
     except Exception:
         pass
+    try:
+        c.execute("ALTER TABLE messages ADD COLUMN draft_meta TEXT")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()

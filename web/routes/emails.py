@@ -440,11 +440,16 @@ def api_thread(thread_id: str):
     """Return all messages in a thread, oldest first."""
     conn = get_connection(db())
     rows = dict_rows(conn.execute("""
-        SELECT m.id, m.from_addr, m.from_name, m.to_addrs, m.subject, m.date,
-               m.snippet, m.flags, m.account_id, m.thread_id,
-               b.body_text, b.body_html
+        SELECT m.id, m.from_addr, m.from_name, m.to_addrs, m.cc_addrs,
+               m.subject, m.date, m.snippet, m.flags, m.account_id, m.thread_id,
+               m.has_attachments, m.body_fetched,
+               b.body_text, b.body_html,
+               f.role as folder_role,
+               a.email as account_email
         FROM messages m
         LEFT JOIN message_bodies b ON b.message_id = m.id
+        JOIN folders f ON f.id = m.folder_id
+        JOIN accounts a ON a.id = m.account_id
         WHERE m.thread_id=?
         ORDER BY m.date ASC
     """, (thread_id,)).fetchall())

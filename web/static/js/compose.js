@@ -101,6 +101,7 @@ function _cmpOpen(opts) {
       <input type="file" id="cmp-file-input" multiple style="display:none" onchange="_cmpFilesAdded(this)">
       <label class="cmp-receipt-label"><input type="checkbox" id="cmp-receipt"> Read receipt</label>
       <span style="flex:1"></span>
+      <button class="btn btn-outline btn-sm" onclick="_cmpSaveDraft()">Save Draft</button>
       <button class="btn btn-outline btn-sm" onclick="_cmpClose()">Cancel</button>
       <button class="btn btn-primary btn-sm" id="cmp-send-btn" onclick="_cmpSend()">Send →</button>
     </div>
@@ -112,6 +113,7 @@ function _cmpOpen(opts) {
   bd._replyMsgId = opts.replyMsgId || null;
   bd._references = opts.references || null;
   bd._isNew      = !(opts.body);
+  bd._draftId    = opts.draftId    || null;
 
   if (!opts.to) {
     document.getElementById('cmp-to')?.focus();
@@ -154,6 +156,63 @@ function _cmpRenderAttachBar() {
   bar.innerHTML = _cmpFiles.map((f, i) =>
     `<span class="cmp-att-chip">&#128206; ${esc(f.name)}<span class="cmp-att-size">${_emFmtSize(f.size)}</span><button class="cmp-att-remove" onclick="_cmpRemoveFile(${i})" title="Remove">✕</button></span>`
   ).join('');
+}
+
+async function _cmpSaveDraft() {
+  const modal     = document.getElementById('cmp-modal');
+  const accountId = parseInt(document.getElementById('cmp-account')?.value || '0');
+  const to        = (document.getElementById('cmp-to')?.value || '').trim();
+  const cc        = (document.getElementById('cmp-cc')?.value || '').trim();
+  const bcc       = (document.getElementById('cmp-bcc')?.value || '').trim();
+  const subject   = (document.getElementById('cmp-subject')?.value || '').trim();
+  const body      = document.getElementById('cmp-body')?.value || '';
+  if (!accountId) { toast('Select an account first', 'err'); return; }
+  const payload = {
+    account_id: accountId, to, cc, bcc, subject, body,
+    reply_msg_id: modal?._replyMsgId || '',
+    references:   modal?._references || '',
+  };
+  try {
+    let r;
+    if (modal?._draftId) {
+      r = await fetch(`/api/drafts/${modal._draftId}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload),
+      }).then(r => r.json());
+    } else {
+      r = await fetch('/api/drafts', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload),
+      }).then(r => r.json());
+      if (r.ok && modal) modal._draftId = r.data.id;
+    }
+    if (r.ok) toast('Draft saved');
+    else toast(r.error || 'Save failed', 'err');
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'err');
+  }
+}
+
+function composeFromDraft(msg) {
+  let meta = {};
+  try { meta = JSON.parse(msg.draft_meta || '{}'); } catch(e) {}
+  const _addrStr = (v) => {
+    try {
+      const p = JSON.parse(v || '[]');
+      if (Array.isArray(p)) return p.map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', ');
+    } catch(e) {}
+    return v || '';
+  };
+  _cmpOpen({
+    title:       'Draft',
+    to:          _addrStr(msg.to_addrs),
+    cc:          _addrStr(msg.cc_addrs),
+    bcc:         meta.bcc || '',
+    subject:     msg.subject || '',
+    body:        msg.body_text || '',
+    replyMsgId:  meta.reply_msg_id || null,
+    references:  meta.references || null,
+    accountId:   msg.account_id,
+    draftId:     msg.id,
+  });
 }
 
 async function _cmpPopulateAccounts(preferredId) {
@@ -216,6 +275,7 @@ async function _cmpSend() {
     if (bcc) fd.append('bcc', bcc);
     if (modal._replyMsgId) fd.append('reply_to_msg_id', modal._replyMsgId);
     if (modal._references) fd.append('references', modal._references);
+    if (modal._draftId)    fd.append('draft_id', modal._draftId);
     if (document.getElementById('cmp-receipt')?.checked) fd.append('request_receipt', '1');
     for (const f of _cmpFiles) fd.append('attachments', f, f.name);
 

@@ -80,7 +80,10 @@ function _acctRender() {
 
   mc.innerHTML = `
     <div class="acct-list-panel">${rows}</div>
-    <button class="btn btn-primary" onclick="_acctAddWizard()">+ Add Account</button>
+    <div style="display:flex;gap:10px;margin-bottom:4px">
+      <button class="btn btn-primary" onclick="_acctAddWizard()">+ Add Account</button>
+      <button class="btn btn-outline" onclick="_acctImport()">&#8659; Import…</button>
+    </div>
     <div class="ai-settings-card" id="ai-settings-card" style="margin-top:28px">
       <div class="ai-settings-title">&#10022; AI Settings</div>
       <div class="ai-settings-body">
@@ -477,6 +480,89 @@ async function _acctStartGoogleOAuth() {
     return;
   }
   window.location.href = r.data.auth_url;
+}
+
+async function _acctImport() {
+  let folders = [];
+  try { folders = await apiFetch('/api/folders'); } catch(e) {}
+
+  const bd = document.createElement('div');
+  bd.className = 'modal-bd';
+  bd.style.display = 'flex';
+  bd.innerHTML = `
+    <div class="modal-box" style="width:460px">
+      <div class="modal-hdr">
+        <span>&#8659; Import Messages</span>
+        <button class="det-close" onclick="this.closest('.modal-bd').remove()">&#x2715;</button>
+      </div>
+      <div class="modal-body" style="padding:16px">
+        <p style="font-size:13px;color:var(--ink2);margin-bottom:14px">
+          Import <strong>.eml</strong> (individual message) or <strong>.mbox</strong> (Thunderbird/Apple Mail export) files.
+        </p>
+        <div class="form-row">
+          <label class="form-label">Import into account</label>
+          <select class="form-select" id="imp-account" onchange="_acctImportUpdateFolders()">
+            ${_acctList.map(a => `<option value="${a.id}">${esc(a.name)} &lt;${esc(a.email)}&gt;</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Destination folder (default: Inbox)</label>
+          <select class="form-select" id="imp-folder">
+            <option value="">Inbox</option>
+            ${folders.map(f => `<option value="${f.id}" data-account="${f.account_id}">${esc(f.display_name || f.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Files (.eml or .mbox)</label>
+          <input type="file" id="imp-files" multiple accept=".eml,.mbox" class="form-input" style="padding:4px">
+        </div>
+        <div id="imp-result" style="margin-top:8px;font-size:13px"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline btn-sm" onclick="this.closest('.modal-bd').remove()">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="imp-go">Import</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+  bd.addEventListener('click', e => { if (e.target === bd) bd.remove(); });
+
+  bd.querySelector('#imp-go').onclick = async () => {
+    const accountId = bd.querySelector('#imp-account').value;
+    const folderId  = bd.querySelector('#imp-folder').value;
+    const files     = bd.querySelector('#imp-files').files;
+    if (!files.length) { toast('Select at least one file', 'err'); return; }
+    const btn = bd.querySelector('#imp-go');
+    btn.disabled = true; btn.textContent = 'Importing…';
+    const fd = new FormData();
+    fd.append('account_id', accountId);
+    if (folderId) fd.append('folder_id', folderId);
+    for (const f of files) fd.append('files', f, f.name);
+    try {
+      const r = await fetch('/api/import', { method: 'POST', body: fd }).then(r => r.json());
+      if (r.ok) {
+        const n = r.data.imported;
+        bd.querySelector('#imp-result').innerHTML = `<span style="color:var(--green)">&#10003; Imported ${n} message${n !== 1 ? 's' : ''}</span>`;
+        btn.textContent = 'Done';
+      } else {
+        bd.querySelector('#imp-result').innerHTML = `<span style="color:var(--red)">${esc(r.error || 'Import failed')}</span>`;
+        btn.disabled = false; btn.textContent = 'Import';
+      }
+    } catch(e) {
+      bd.querySelector('#imp-result').innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`;
+      btn.disabled = false; btn.textContent = 'Import';
+    }
+  };
+}
+
+function _acctImportUpdateFolders() {
+  const accountId = parseInt(document.getElementById('imp-account')?.value || '0');
+  const sel = document.getElementById('imp-folder');
+  if (!sel) return;
+  for (const opt of sel.options) {
+    if (opt.value === '') continue;
+    opt.style.display = (parseInt(opt.dataset.account) === accountId) ? '' : 'none';
+  }
+  sel.value = '';
 }
 
 async function _acctStartMicrosoftOAuth() {

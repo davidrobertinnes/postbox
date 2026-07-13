@@ -133,6 +133,11 @@ def parse_raw(raw_bytes: bytes) -> dict:
     body_text, body_html = _get_body(msg)
     attachments = _get_attachments(msg)
 
+    receipt_to = (
+        msg.get("Disposition-Notification-To") or
+        msg.get("Return-Receipt-To") or ""
+    ).strip() or None
+
     return {
         "message_id": (msg.get("Message-ID") or "").strip(),
         "in_reply_to": (msg.get("In-Reply-To") or "").strip(),
@@ -148,4 +153,5 @@ def parse_raw(raw_bytes: bytes) -> dict:
         "snippet": snippet_from_text(body_text or re.sub(r'<[^>]+>', ' ', body_html)),
         "has_attachments": 1 if attachments else 0,
         "attachments": attachments,
+        "receipt_to": receipt_to,
     }

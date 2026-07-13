@@ -932,6 +932,21 @@ html, body {
 .em-pill-cat-notification.active { background: #555; border-color: #555; color: #fff; }
 
 /* ══════════════════════════════════════════════════════════════════════
+   FILTERS PAGE — rules, whitelist, blacklist
+══════════════════════════════════════════════════════════════════════ */
+.rl-section      { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin-bottom: 20px; }
+.rl-section-hdr  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.rl-section-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.rl-table        { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rl-table th     { text-align: left; color: var(--ink3); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px 8px; border-bottom: 1px solid var(--border); }
+.rl-table td     { padding: 8px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.rl-table tr:last-child td { border-bottom: none; }
+
+/* Read-receipt checkbox in compose footer */
+.cmp-receipt-label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink3); cursor: pointer; }
+.cmp-receipt-label input { cursor: pointer; }
+
+/* ══════════════════════════════════════════════════════════════════════
    STAR / FLAG
 ══════════════════════════════════════════════════════════════════════ */
 .em-star-cell { text-align: center; padding: 0 4px; }

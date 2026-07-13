@@ -206,6 +206,8 @@ function _emRender(keepScroll) {
       ${_emCategoryPills()}` : ''}
       ${_emCategoryFilter && _emTotal > 0 ? `<button class="btn btn-outline btn-sm" onclick="_emBulkMove('${_emCategoryFilter}')">Move all ${_emTotal}&hellip;</button>` : ''}
       ${(_emFolder === 'inbox' || _emFolderId) ? `<button class="btn btn-outline btn-sm" onclick="_emMarkAllRead()" title="Mark all as read">&#10003; All read</button>` : ''}
+      ${_emFolder === 'trash' ? `<button class="btn btn-outline btn-sm btn-danger" onclick="_emEmptyTrash()">&#128465; Empty Trash</button>` : ''}
+      <button class="btn btn-outline btn-sm" onclick="_emPrefetch()" title="Download all message bodies for offline reading">&#8659; Offline</button>
       <button class="btn btn-primary btn-sm" onclick="composeNew(${_emAccountId || 'null'})">&#9998; Compose</button>
     </div>
     <div class="em-list-panel">
@@ -527,11 +529,80 @@ function _emRenderDetail(msg, threadId) {
   unreadBtn.onclick = () => _emMarkUnread(msg.id);
   foot.appendChild(unreadBtn);
 
+  if (msg.folder_role === 'spam') {
+    const unspamBtn = document.createElement('button');
+    unspamBtn.className = 'btn btn-outline btn-sm';
+    unspamBtn.textContent = 'Not Spam';
+    unspamBtn.onclick = async () => {
+      const r = await fetch(`/api/emails/${msg.id}/unspam`, { method: 'POST' }).then(r => r.json());
+      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Moved to Inbox'); }
+      else toast(r.error || 'Failed', 'err');
+    };
+    foot.appendChild(unspamBtn);
+  } else {
+    const spamBtn = document.createElement('button');
+    spamBtn.className = 'btn btn-outline btn-sm';
+    spamBtn.textContent = 'Spam';
+    spamBtn.onclick = async () => {
+      const r = await fetch(`/api/emails/${msg.id}/spam`, { method: 'POST' }).then(r => r.json());
+      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Marked as spam'); }
+      else toast(r.error || 'Failed', 'err');
+    };
+    foot.appendChild(spamBtn);
+  }
+
   const delBtn = document.createElement('button');
   delBtn.className = 'btn btn-outline btn-sm btn-danger';
   delBtn.textContent = 'Delete';
   delBtn.onclick = () => _emTrash(msg.id, delBtn);
   foot.appendChild(delBtn);
+}
+
+async function _emPrefetch() {
+  const payload = {};
+  if (_emFolderId)      payload.folder_id  = _emFolderId;
+  else if (_emFolder)   payload.folder_role = _emFolder;
+  if (_emAccountId)     payload.account_id  = _emAccountId;
+  try {
+    const r = await fetch('/api/emails/prefetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(r => r.json());
+    if (!r.ok) { toast(r.error || 'Failed', 'err'); return; }
+    const n = r.data.queued;
+    if (n === 0) { toast('All messages already downloaded'); return; }
+    toast(`Downloading ${n} message${n !== 1 ? 's' : ''} for offline access…`);
+    const key = r.data.key;
+    const _poll = setInterval(async () => {
+      try {
+        const s = await apiFetch(`/api/emails/prefetch_status?key=${encodeURIComponent(key)}`);
+        if (!s.running) {
+          clearInterval(_poll);
+          toast(`Downloaded ${s.done} of ${s.total} messages`);
+        }
+      } catch(e) { clearInterval(_poll); }
+    }, 3000);
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+}
+
+async function _emEmptyTrash() {
+  if (!confirm('Permanently delete all messages in Trash?')) return;
+  const accountId = _emAccountId || (_emMessages[0]?.account_id) || null;
+  if (!accountId) { toast('No account selected', 'err'); return; }
+  try {
+    const r = await fetch('/api/emails/empty_trash', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId }),
+    }).then(r => r.json());
+    if (!r.ok) { toast(r.error || 'Failed', 'err'); return; }
+    const n = r.data.deleted;
+    _emMessages = [];
+    _emTotal = 0;
+    _emRender();
+    toast(`Deleted ${n} message${n !== 1 ? 's' : ''} permanently`);
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
 }
 
 async function _emMarkUnread(msgId) {

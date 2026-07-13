@@ -73,8 +73,33 @@ def mark_read(message_db_id: int, db_path: str) -> bool:
 
     _set_flags_db(conn, message_db_id, row["folder_id"], add=["\\Seen"], remove=[])
     conn.commit()
-    uid, account_id, folder_name = row["uid"], row["account_id"], row["folder_name"]
+    uid         = row["uid"]
+    account_id  = row["account_id"]
+    folder_name = row["folder_name"]
+    receipt_to  = row["receipt_to"]  if "receipt_to"  in row.keys() else None
+    receipt_sent = row["receipt_sent"] if "receipt_sent" in row.keys() else 1
+    subject     = row["subject"]
+    message_id  = row["message_id"]
     conn.close()
+
+    # Send read receipt (MDN) if requested and not yet sent
+    if receipt_to and not receipt_sent:
+        try:
+            acct_conn = get_connection(db_path)
+            acct_row  = acct_conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+            acct_conn.close()
+            if acct_row:
+                from core.smtp_send import send_mdn
+                import threading
+                threading.Thread(
+                    target=lambda: _send_mdn_and_mark(
+                        dict(acct_row), subject, message_id, receipt_to,
+                        message_db_id, db_path
+                    ),
+                    daemon=True,
+                ).start()
+        except Exception as e:
+            log.error("MDN setup error msg=%d: %s", message_db_id, e)
 
     try:
         client = _imap_connect(account_id, db_path)
@@ -86,6 +111,18 @@ def mark_read(message_db_id: int, db_path: str) -> bool:
     except Exception as e:
         log.error("mark_read uid=%d: %s", uid, e)
     return False
+
+
+def _send_mdn_and_mark(account, subject, message_id, receipt_to, msg_db_id, db_path):
+    try:
+        from core.smtp_send import send_mdn
+        send_mdn(account, subject or "(no subject)", message_id or "", receipt_to)
+        conn = get_connection(db_path)
+        conn.execute("UPDATE messages SET receipt_sent=1 WHERE id=?", (msg_db_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log.error("send_mdn msg=%d: %s", msg_db_id, e)
 
 
 def mark_unread(message_db_id: int, db_path: str) -> bool:
@@ -236,6 +273,138 @@ def bulk_move_messages(message_ids: list, dst_folder_id: int, db_path: str) -> i
             log.error("bulk_move src=%s account=%d: %s", src_folder_name, account_id, e)
 
     return moved
+
+
+def empty_trash(account_id: int, db_path: str) -> int:
+    """Permanently delete all messages in the Trash folder. Returns count deleted."""
+    conn = get_connection(db_path)
+    trash = conn.execute(
+        "SELECT * FROM folders WHERE account_id=? AND role='trash' LIMIT 1",
+        (account_id,)
+    ).fetchone()
+    if not trash:
+        conn.close()
+        return 0
+    trash = dict(trash)
+
+    rows = conn.execute(
+        "SELECT id, uid FROM messages WHERE folder_id=? AND account_id=?",
+        (trash["id"], account_id)
+    ).fetchall()
+    if not rows:
+        conn.close()
+        return 0
+
+    ids  = [r["id"]  for r in rows]
+    uids = [r["uid"] for r in rows]
+    ph   = ",".join("?" * len(ids))
+    conn.execute(f"DELETE FROM message_bodies WHERE message_id IN ({ph})", ids)
+    conn.execute(f"DELETE FROM messages WHERE id IN ({ph})", ids)
+    conn.execute("UPDATE folders SET message_count=0, unread_count=0 WHERE id=?", (trash["id"],))
+    conn.commit()
+    conn.close()
+
+    try:
+        client = _imap_connect(account_id, db_path)
+        if client:
+            client.select_folder(trash["name"], readonly=False)
+            client.add_flags(uids, ["\\Deleted"])
+            client.expunge()
+            client.logout()
+    except Exception as e:
+        log.error("empty_trash account=%d: %s", account_id, e)
+
+    return len(ids)
+
+
+def mark_spam(message_db_id: int, db_path: str) -> bool:
+    """Move message to spam/junk folder."""
+    conn = get_connection(db_path)
+    row = _load_message(conn, message_db_id)
+    if not row:
+        conn.close()
+        return False
+    account_id = row["account_id"]
+    uid        = row["uid"]
+    src_folder = row["folder_name"]
+    folder_id  = row["folder_id"]
+
+    spam = conn.execute(
+        "SELECT * FROM folders WHERE account_id=? AND role='spam' LIMIT 1",
+        (account_id,)
+    ).fetchone()
+    if spam and folder_id == spam["id"]:
+        conn.close()
+        return True  # already in spam
+
+    spam_name = spam["name"] if spam else None
+    spam_id   = spam["id"]   if spam else None
+    conn.close()
+
+    if spam_name:
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(src_folder, readonly=False)
+                try:
+                    client.move([uid], spam_name)
+                except Exception:
+                    client.copy([uid], spam_name)
+                    client.add_flags([uid], ["\\Deleted"])
+                    client.expunge()
+                client.logout()
+        except Exception as e:
+            log.error("mark_spam uid=%d: %s", uid, e)
+
+    if spam_id:
+        conn = get_connection(db_path)
+        conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (spam_id, message_db_id))
+        conn.commit()
+        conn.close()
+    return True
+
+
+def mark_not_spam(message_db_id: int, db_path: str) -> bool:
+    """Move message from spam/junk back to inbox."""
+    conn = get_connection(db_path)
+    row = _load_message(conn, message_db_id)
+    if not row:
+        conn.close()
+        return False
+    account_id = row["account_id"]
+    uid        = row["uid"]
+    src_folder = row["folder_name"]
+
+    inbox = conn.execute(
+        "SELECT * FROM folders WHERE account_id=? AND role='inbox' LIMIT 1",
+        (account_id,)
+    ).fetchone()
+    if not inbox:
+        conn.close()
+        return False
+    inbox_id   = inbox["id"]
+    inbox_name = inbox["name"]
+    conn.close()
+
+    try:
+        client = _imap_connect(account_id, db_path)
+        if client:
+            client.select_folder(src_folder, readonly=False)
+            try:
+                client.move([uid], inbox_name)
+            except Exception:
+                client.copy([uid], inbox_name)
+                client.add_flags([uid], ["\\Deleted"])
+                client.expunge()
+            client.logout()
+    except Exception as e:
+        log.error("mark_not_spam uid=%d: %s", uid, e)
+
+    conn = get_connection(db_path)
+    conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (inbox_id, message_db_id))
+    conn.commit()
+    conn.close()
+    return True
 
 
 def toggle_starred(message_db_id: int, db_path: str) -> bool:

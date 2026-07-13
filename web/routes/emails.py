@@ -2,12 +2,15 @@
 Email list and thread endpoints.
 """
 import json
+import threading
 from flask import Blueprint, request
 from web.shared import db, ok, err, dict_rows
 from core.database import get_connection
 from core.imap_sync import fetch_body
 
 bp = Blueprint("emails", __name__)
+
+_prefetch_state = {}  # {key: {"total": N, "done": M, "running": bool}}
 
 
 def _parse_search_operators(q: str):
@@ -230,6 +233,67 @@ def api_email(mid: int):
     return ok(msg)
 
 
+@bp.route("/api/emails/prefetch", methods=["POST"])
+def api_prefetch():
+    """Start background body-fetch for all messages in a view that lack body."""
+    data       = request.get_json() or {}
+    folder_role = data.get("folder_role")
+    folder_id_arg = data.get("folder_id")
+    account_id_arg = data.get("account_id")
+
+    conn = get_connection(db())
+    params, where = [], []
+    if folder_id_arg:
+        where.append("m.folder_id=?"); params.append(folder_id_arg)
+    elif folder_role:
+        where.append("f.role=?"); params.append(folder_role)
+    if account_id_arg:
+        where.append("m.account_id=?"); params.append(account_id_arg)
+    where.append("m.body_fetched=0")
+    wc = "WHERE " + " AND ".join(where)
+    rows = conn.execute(f"""
+        SELECT m.id, m.uid, m.account_id, f.name as folder_name
+        FROM messages m JOIN folders f ON f.id=m.folder_id {wc}
+        LIMIT 500
+    """, params).fetchall()
+    conn.close()
+    if not rows:
+        return ok({"queued": 0})
+
+    key = f"{folder_role or folder_id_arg}_{account_id_arg}"
+    _prefetch_state[key] = {"total": len(rows), "done": 0, "running": True}
+
+    db_path = db()
+    def _run():
+        for row in rows:
+            fetch_body(row["id"], row["account_id"], row["uid"], row["folder_name"], db_path)
+            _prefetch_state[key]["done"] += 1
+        _prefetch_state[key]["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return ok({"queued": len(rows), "key": key})
+
+
+@bp.route("/api/emails/prefetch_status")
+def api_prefetch_status():
+    key = request.args.get("key", "")
+    state = _prefetch_state.get(key)
+    if not state:
+        return ok({"done": 0, "total": 0, "running": False})
+    return ok(state)
+
+
+@bp.route("/api/emails/empty_trash", methods=["POST"])
+def api_empty_trash():
+    from core.imap_actions import empty_trash
+    data = request.get_json() or {}
+    account_id = data.get("account_id")
+    if not account_id:
+        return err("account_id required")
+    deleted = empty_trash(int(account_id), db())
+    return ok({"deleted": deleted})
+
+
 @bp.route("/api/emails/mark_all_read", methods=["POST"])
 def api_mark_all_read():
     from core.imap_actions import mark_all_read
@@ -283,6 +347,22 @@ def api_trash(mid: int):
     if trash_message(mid, db()):
         return ok()
     return err("Could not trash message")
+
+
+@bp.route("/api/emails/<int:mid>/spam", methods=["POST"])
+def api_spam(mid: int):
+    from core.imap_actions import mark_spam
+    if mark_spam(mid, db()):
+        return ok()
+    return err("Could not mark as spam")
+
+
+@bp.route("/api/emails/<int:mid>/unspam", methods=["POST"])
+def api_unspam(mid: int):
+    from core.imap_actions import mark_not_spam
+    if mark_not_spam(mid, db()):
+        return ok()
+    return err("Could not unspam message")
 
 
 @bp.route("/api/emails/<int:mid>/star", methods=["POST"])

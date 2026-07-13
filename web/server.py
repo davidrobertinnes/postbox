@@ -28,17 +28,21 @@ DB_PATH = None
 
 
 # ── Blueprints ──────────────────────────────────────────────────────────────────
-from web.routes.accounts import bp as accounts_bp
-from web.routes.emails   import bp as emails_bp
-from web.routes.compose  import bp as compose_bp
-from web.routes.ai       import bp as ai_bp
-from web.routes.oauth    import bp as oauth_bp
+from web.routes.accounts     import bp as accounts_bp
+from web.routes.emails       import bp as emails_bp
+from web.routes.compose      import bp as compose_bp
+from web.routes.ai           import bp as ai_bp
+from web.routes.oauth        import bp as oauth_bp
+from web.routes.rules        import bp as rules_bp
+from web.routes.import_mail  import bp as import_bp
 
 app.register_blueprint(accounts_bp)
 app.register_blueprint(emails_bp)
 app.register_blueprint(compose_bp)
 app.register_blueprint(ai_bp)
 app.register_blueprint(oauth_bp)
+app.register_blueprint(rules_bp)
+app.register_blueprint(import_bp)
 
 
 # ── Shell route ─────────────────────────────────────────────────────────────────

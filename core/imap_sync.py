@@ -227,11 +227,14 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
         return 0
 
     # Phase 3: write results in a short-lived connection
-    new_count = 0
+    new_count  = 0
+    new_msg_ids = []
     conn = get_connection(db_path)
     try:
         for uid, data in results:
-            _store_envelope(conn, account_id, folder_id, uid, data)
+            new_id = _store_envelope(conn, account_id, folder_id, uid, data)
+            if new_id:
+                new_msg_ids.append(new_id)
             new_count += 1
         conn.execute(
             "UPDATE folders SET unread_count=?, message_count=? WHERE id=?",
@@ -246,6 +249,14 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
         log.error("sync_inbox write account=%d: %s", account_id, e)
     finally:
         conn.close()
+
+    if new_msg_ids:
+        import threading
+        from core.rules import apply_rules_to_message
+        threading.Thread(
+            target=lambda ids=new_msg_ids: [apply_rules_to_message(mid, db_path) for mid in ids],
+            daemon=True,
+        ).start()
 
     return new_count
 
@@ -328,10 +339,13 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
         return total_new
 
     # Phase 3: write results in a short-lived connection
+    new_msg_ids = []
     conn = get_connection(db_path)
     try:
         for folder_id, uid, data in results:
-            _store_envelope(conn, account_id, folder_id, uid, data)
+            new_id = _store_envelope(conn, account_id, folder_id, uid, data)
+            if new_id:
+                new_msg_ids.append(new_id)
         for folder_id, (msg_count, unread_count) in folder_counts.items():
             if unread_count is not None:
                 conn.execute(
@@ -353,11 +367,20 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
     finally:
         conn.close()
 
+    if new_msg_ids:
+        import threading
+        from core.rules import apply_rules_to_message
+        threading.Thread(
+            target=lambda ids=new_msg_ids: [apply_rules_to_message(mid, db_path) for mid in ids],
+            daemon=True,
+        ).start()
+
     return total_new
 
 
-def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict) -> None:
-    """Parse IMAP ENVELOPE data and insert/ignore into messages table."""
+def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict) -> int | None:
+    """Parse IMAP ENVELOPE data and insert/ignore into messages table.
+    Returns the new message DB id if inserted, None if already existed."""
     env = data.get(b"ENVELOPE")
     if not env:
         return
@@ -391,7 +414,7 @@ def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict)
     body_struct = data.get(b"BODYSTRUCTURE")
     has_attachments = _has_attachments(body_struct)
 
-    conn.execute("""
+    cur = conn.execute("""
         INSERT OR IGNORE INTO messages
             (account_id, folder_id, uid, message_id, thread_id,
              from_addr, from_name, to_addrs, cc_addrs,
@@ -402,6 +425,7 @@ def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict)
         from_addr, from_name, to_addrs, cc_addrs,
         subject, date_str, flags_json, has_attachments
     ))
+    return cur.lastrowid if cur.rowcount > 0 else None
 
 
 def _decode_mime(val: str | None) -> str | None:
@@ -498,8 +522,8 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
         """, (message_db_id, parsed["body_text"], parsed["body_html"]))
         atts = parsed.get("attachments", [])
         conn.execute(
-            "UPDATE messages SET body_fetched=1, snippet=?, has_attachments=? WHERE id=?",
-            (parsed["snippet"], 1 if atts else 0, message_db_id)
+            "UPDATE messages SET body_fetched=1, snippet=?, has_attachments=?, receipt_to=? WHERE id=?",
+            (parsed["snippet"], 1 if atts else 0, parsed.get("receipt_to"), message_db_id)
         )
         for att in atts:
             conn.execute("""

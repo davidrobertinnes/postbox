@@ -99,6 +99,7 @@ function _cmpOpen(opts) {
     <div class="modal-foot">
       <button class="btn btn-outline btn-sm cmp-attach-btn" onclick="document.getElementById('cmp-file-input').click()">&#128206; Attach</button>
       <input type="file" id="cmp-file-input" multiple style="display:none" onchange="_cmpFilesAdded(this)">
+      <label class="cmp-receipt-label"><input type="checkbox" id="cmp-receipt"> Read receipt</label>
       <span style="flex:1"></span>
       <button class="btn btn-outline btn-sm" onclick="_cmpClose()">Cancel</button>
       <button class="btn btn-primary btn-sm" id="cmp-send-btn" onclick="_cmpSend()">Send →</button>
@@ -215,6 +216,7 @@ async function _cmpSend() {
     if (bcc) fd.append('bcc', bcc);
     if (modal._replyMsgId) fd.append('reply_to_msg_id', modal._replyMsgId);
     if (modal._references) fd.append('references', modal._references);
+    if (document.getElementById('cmp-receipt')?.checked) fd.append('request_receipt', '1');
     for (const f of _cmpFiles) fd.append('attachments', f, f.name);
 
     const r = await fetch('/api/send', { method: 'POST', body: fd });

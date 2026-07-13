@@ -27,6 +27,9 @@
       <div class="nav-item" data-module="accounts" onclick="navigate('accounts')">
         <span class="nav-icon">&#9881;</span>Accounts
       </div>
+      <div class="nav-item" data-module="filters" onclick="navigate('filters')">
+        <span class="nav-icon">&#9878;</span>Filters
+      </div>
     </div>
 
     <div class="sidebar-footer">
@@ -74,6 +77,7 @@
 <script src="/static/js/emails.js"></script>
 <script src="/static/js/accounts.js"></script>
 <script src="/static/js/compose.js"></script>
+<script src="/static/js/rules.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // SHELL — navigation, apiFetch, toast, helpers, folder sidebar
@@ -277,10 +281,11 @@ function _setNavActive(key) {
 function navigate(key) {
   _currentModule = key;
   _setNavActive(key);
-  const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',junk:'Junk',all:'All Mail',accounts:'Accounts'};
+  const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',junk:'Junk',all:'All Mail',accounts:'Accounts',filters:'Filters'};
   document.getElementById('page-title').textContent = titles[key] || key;
   detClose();
   if (key === 'accounts') { pageAccounts(); return; }
+  if (key === 'filters')  { pageFilters();  return; }
   pageEmails(key, titles[key]);
 }
 

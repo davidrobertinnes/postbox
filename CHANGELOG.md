@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- core/database.py: added `rules`, `sender_lists` tables and `receipt_to TEXT`, `receipt_sent INTEGER DEFAULT 0` migrations to messages table
+- core/imap_actions.py: `empty_trash()` — IMAP EXPUNGE on trash folder then deletes all trash messages from DB for the account
+- core/imap_actions.py: `mark_spam()` / `mark_not_spam()` — IMAP MOVE to/from spam folder with COPY+DELETE fallback; updates DB folder_id
+- core/imap_actions.py: `mark_read()` extended — checks `receipt_to` and `receipt_sent=0` after marking; fires background thread `_send_mdn_and_mark()` to send RFC 3798 MDN then sets `receipt_sent=1`
+- core/imap_actions.py: `_send_mdn_and_mark()` — sends MDN via `smtp_send.send_mdn()` then marks `receipt_sent=1` in DB; runs in daemon thread to avoid blocking read action
+- core/smtp_send.py: `request_receipt` param on `send_message()` — adds `Disposition-Notification-To` header when True; `send_mdn()` function — sends RFC 3798 Message Disposition Notification to the requesting address
+- core/email_parser.py: `parse_raw()` now returns `receipt_to` field from `Disposition-Notification-To` or `Return-Receipt-To` header; stored in DB on inbound message insert
+- core/imap_sync.py: `_store_envelope()` now returns `int | None` — `lastrowid` when newly inserted, `None` for duplicates; sync Phase 3 collects `new_msg_ids` list and spawns background thread calling `apply_rules_to_message` for each new message
+- core/rules.py (NEW): `apply_rules_to_message(message_id, db_path)` — loads message, checks whitelist (bypass) and blacklist (auto-spam), then applies active rules in order; `_matches(rule, msg)` for field/operator/value matching; `_do_action()` dispatches to imap_actions functions; terminal actions (move/trash/spam/delete) break the chain
+- web/routes/emails.py: `POST /api/emails/empty_trash` — calls `empty_trash()` for account; `POST /api/emails/<id>/spam` and `<id>/unspam` — calls `mark_spam()` / `mark_not_spam()`; `POST /api/emails/prefetch` — starts background body-fetch thread for a folder, updates `_prefetch_state`; `GET /api/emails/prefetch_status` — returns current prefetch progress dict
+- web/routes/rules.py (NEW): `GET/POST /api/rules` — list and create filter rules; `PUT/DELETE /api/rules/<id>` — update and delete; `GET/POST /api/sender_lists` — list and add whitelist/blacklist entries; `DELETE /api/sender_lists/<id>` — remove entry
+- web/routes/import_mail.py (NEW): `POST /api/import` — accepts `files[]` upload; detects `.mbox` by filename or `b"From "` prefix and iterates messages; falls back to split on `\nFrom ` if `mailbox.mbox` fails; `.eml` treated as single message; `_import_one()` parses with `parse_raw()`, inserts with time-based synthetic UID, updates `uid=lastrowid` for guaranteed uniqueness; stores body and attachments
+- web/routes/compose.py: `request_receipt` read from form/JSON body; passed to `send_message()` as `request_receipt=True/False`
+- web/server.py: registered `rules_bp` and `import_bp` blueprints
+- web/templates/dashboard.html: added "Filters" nav item; `navigate('filters')` dispatch in `navigate()`; `titles` map includes `filters:'Filters'`; `<script src="/static/js/rules.js">` added
+- web/static/js/emails.js: "Empty Trash" button in toolbar (shown only in trash folder); `_emEmptyTrash()` POSTs to `/api/emails/empty_trash`, clears list; Spam button in detail footer (shown when `folder_role` is inbox/sent/etc); Not Spam button (shown when `folder_role === 'spam'`); Star/Unstar button in detail footer; "⇙ Offline" button in toolbar — `_emPrefetch()` POSTs to start prefetch, polls `/prefetch_status` every 3s, toasts progress
+- web/static/js/accounts.js: Import button added below account list; `_acctImport()` modal — account picker, folder picker, file input (multiple .eml/.mbox); `_acctImportUpdateFolders()` fetches folder list when account changes; POSTs to `/api/import` with FormData; toasts result count
+- web/static/js/compose.js: "Read receipt" checkbox in compose footer; `fd.append('request_receipt', '1')` in `_cmpSend()` when checked
+- web/static/js/rules.js (NEW): `pageFilters()` — renders Filter Rules and Sender Lists cards; `_rlRender()` fetches and displays rules table with edit/delete; `_rlOpenRuleForm()` opens det-panel with field/operator/value/action/target-folder inputs; `_rlSaveRule()` POST/PUT; `_rlDeleteRule()` DELETE with confirmation; `_rlAddSender()` / `_rlDeleteSender()` for whitelist/blacklist management
+- web/static/postbox.css: `.rl-section`, `.rl-section-hdr`, `.rl-section-title`, `.rl-table` styles for filters page; `.cmp-receipt-label` for read-receipt checkbox in compose
+
 - core/database.py: added `signature TEXT` migration to accounts table
 - core/imap_actions.py: `toggle_starred()` — toggles `\\Flagged` IMAP flag on a message, updates DB flags JSON, write-back to IMAP best-effort; returns bool (now starred)
 - core/imap_actions.py: `mark_all_read()` — marks a list of message IDs as read in DB, batches IMAP write-back grouped by (account, folder)

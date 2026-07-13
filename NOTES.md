@@ -2,6 +2,24 @@
 
 ## Current state (2026-07-14)
 
+### Session 2026-07-14 (5) — empty trash, spam/unspam, filter rules, whitelist/blacklist, read receipts, offline prefetch, import
+
+- **Empty Trash** — `POST /api/emails/empty_trash` calls `imap_actions.empty_trash()`; IMAP EXPUNGE on trash folder; DB deletes all messages in trash for account; "Empty Trash" button in toolbar (visible in trash folder)
+- **Spam / Not Spam** — `POST /api/emails/<id>/spam` and `unspam`; IMAP move to/from spam folder; contextual button in detail footer based on `msg.folder_role`; synced back to correct folder on next pull
+- **Filter Rules** — `core/rules.py`: `apply_rules_to_message()` runs after sync Phase 3 for each new message; rules table with `field`, `operator`, `value`, `action`, `target_folder_id`, `is_active`; terminal actions (move/trash/spam/delete) stop chain; non-terminal (mark_read/mark_unread/star) continue; whitelist bypasses all rules; blacklist auto-spams before rules
+- **Whitelist / Blacklist** — `sender_lists` table; `type` = `whitelist` or `blacklist`; matched on `from_addr` before rules are applied
+- **Rules UI** — `web/static/js/rules.js`: `pageFilters()` renders two cards — Filter Rules and Sender Lists; add/edit/delete rules via det-panel form; "Filters" nav item added to dashboard; `/api/rules` and `/api/sender_lists` CRUD routes
+- **Read Receipts** — `Disposition-Notification-To` header added to sent messages when "Read receipt" checkbox checked in compose; `email_parser.py` stores `receipt_to` from `Disposition-Notification-To` or `Return-Receipt-To` on inbound messages; `mark_read` checks `receipt_to` + `receipt_sent=0` and fires background `_send_mdn_and_mark()` thread; RFC 3798 compliant MDN via `smtp_send.send_mdn()`
+- **Offline / Body Prefetch** — `POST /api/emails/prefetch` starts background thread fetching all unfetched bodies in a folder; `GET /api/emails/prefetch_status` polls progress; "⇙ Offline" button in toolbar polls every 3s and shows progress toast; module-level `_prefetch_state` dict keyed by folder+account
+- **Import** — `web/routes/import_mail.py`: `POST /api/import` accepts `.eml` (single message) and `.mbox` (mailbox file) uploads; mbox detected by filename or `b"From "` content prefix; `_import_one()` parses with `email_parser.parse_raw()`, inserts with synthetic UID, updates uid to DB row id; accounts page has Import button with folder picker modal
+
+### Next items (priority order)
+
+1. **Google verification** — submit for production publishing to remove 7-day token limit and 100-user cap
+2. **Microsoft OAuth testing** — get Azure app registered and test end-to-end (deferred — Azure requires credit card)
+
+---
+
 ### Session 2026-07-14 (4) — signatures, star/flag, bulk mark-read, search operators, AI draft modal, auto-refresh
 
 - **Signatures** — `signature TEXT` column added to accounts table (migration); edit form in accounts panel has a signature textarea; new messages auto-inject signature below a `-- ` separator; switching accounts in compose replaces the signature

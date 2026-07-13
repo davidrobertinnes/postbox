@@ -24,6 +24,7 @@ def send_message(
     references: str | None = None,
     body_html: str | None = None,
     attachments: list[tuple[str, str, bytes]] | None = None,
+    request_receipt: bool = False,
 ) -> tuple[bool, str]:
     """
     Send a message via SMTP. Returns (ok, message).
@@ -92,6 +93,9 @@ def send_message(
         msg["In-Reply-To"] = reply_to_msg_id
         msg["References"]  = f"{references} {reply_to_msg_id}".strip() if references else reply_to_msg_id
 
+    if request_receipt:
+        msg["Disposition-Notification-To"] = account["email"]
+
     try:
         port     = int(account.get("smtp_port", 587))
         host     = account["smtp_host"]
@@ -125,3 +129,31 @@ def send_message(
         return True, "Sent"
     except Exception as e:
         return False, str(e)
+
+
+def send_mdn(account: dict, original_subject: str, original_message_id: str,
+             receipt_to: str) -> bool:
+    """Send a Message Disposition Notification (RFC 3798 simplified)."""
+    from email.mime.multipart import MIMEMultipart as _MP
+    from email.mime.text import MIMEText as _MT
+
+    subject = f"Read: {original_subject}"
+    human   = (f"This message confirms that your message\n"
+               f"  Subject: {original_subject}\n"
+               f"was read by {account.get('name', account['email'])} "
+               f"<{account['email']}>.")
+    machine = (f"Final-Recipient: rfc822; {account['email']}\r\n"
+               f"Original-Message-ID: {original_message_id}\r\n"
+               f"Disposition: manual-action/MDN-sent-automatically; displayed\r\n")
+
+    outer = _MP("report", **{"report-type": "disposition-notification"})
+    outer.attach(_MT(human, "plain", "utf-8"))
+    outer.attach(_MT(machine, "plain", "utf-8"))
+    outer["From"]       = f"{account.get('name', '')} <{account['email']}>"
+    outer["To"]         = receipt_to
+    outer["Subject"]    = Header(subject, "utf-8")
+    outer["Date"]       = formatdate(localtime=True)
+    outer["Message-ID"] = make_msgid()
+
+    ok_sent, _ = send_message(account, receipt_to, subject, human)
+    return ok_sent

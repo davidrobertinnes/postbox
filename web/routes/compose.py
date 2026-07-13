@@ -48,6 +48,7 @@ def api_send():
         reply_to_msg_id=data.get("reply_to_msg_id") or None,
         references=data.get("references") or None,
         attachments=attachments or None,
+        request_receipt=data.get("request_receipt") in ("1", "true", True),
     )
     if ok_sent:
         return ok({"message": msg})

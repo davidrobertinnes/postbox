@@ -94,6 +94,27 @@ def initialise_database(db_path: str) -> None:
         cached_at TEXT
     )""")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        condition_field TEXT NOT NULL,
+        condition_op TEXT NOT NULL,
+        condition_value TEXT NOT NULL,
+        action TEXT NOT NULL,
+        action_folder_id INTEGER,
+        active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS sender_lists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        list_type TEXT NOT NULL,
+        UNIQUE(account_id, email, list_type)
+    )""")
+
     # Indices
     c.execute("CREATE INDEX IF NOT EXISTS idx_msg_account_folder ON messages(account_id, folder_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_msg_date ON messages(date)")
@@ -107,6 +128,14 @@ def initialise_database(db_path: str) -> None:
         pass
     try:
         c.execute("ALTER TABLE accounts ADD COLUMN signature TEXT")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE messages ADD COLUMN receipt_to TEXT")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE messages ADD COLUMN receipt_sent INTEGER DEFAULT 0")
     except Exception:
         pass
 

@@ -374,11 +374,11 @@ function _emRenderDetail(msg, threadId) {
   const hasHtml = msg.body_html && msg.body_html.trim();
 
   document.getElementById('det-body').innerHTML = `
-    <div class="ai-summary-box" id="ai-summary-box">
+    <div class="ai-summary-box" id="ai-summary-box" style="display:none">
       <div class="ai-summary-label">&#10022; AI Summary</div>
       <div id="ai-summary-text"></div>
     </div>
-    <div class="ai-actions-box" id="ai-actions-box">
+    <div class="ai-actions-box" id="ai-actions-box" style="display:none">
       <div class="ai-actions-label">&#9889; Actions</div>
       <div id="ai-actions-list"></div>
     </div>
@@ -561,7 +561,7 @@ async function _emLoadSummary(threadId) {
     if (r.ok && r.data && r.data.summary) {
       const box = document.getElementById('ai-summary-box');
       const txt = document.getElementById('ai-summary-text');
-      if (box && txt) { txt.textContent = r.data.summary; box.classList.add('loaded'); }
+      if (box && txt) { txt.textContent = r.data.summary; box.style.display = ''; box.classList.add('loaded'); }
     }
   } catch(e) {}
 }
@@ -586,6 +586,7 @@ async function _emLoadActions(threadId) {
         ${a.due_date ? `<span class="ai-action-due">${esc(a.due_date)}</span>` : ''}
       </div>`;
     }).join('');
+    box.style.display = '';
     box.classList.add('loaded');
   } catch(e) {}
 }

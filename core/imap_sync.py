@@ -448,13 +448,19 @@ def _parse_imap_addr_list(addr_list) -> list[tuple[str, str]]:
 
 
 def _has_attachments(body_struct) -> int:
-    """Rough check: if BODYSTRUCTURE contains more than one part, likely has attachments."""
-    if body_struct is None:
+    if body_struct is None or not isinstance(body_struct, (list, tuple)):
         return 0
-    if isinstance(body_struct, (list, tuple)):
-        if len(body_struct) > 1 and isinstance(body_struct[0], (list, tuple)):
-            return 1
-    return 0
+    # The multipart subtype is the last string element (b'MIXED', b'ALTERNATIVE', etc.)
+    subtype = ''
+    for item in reversed(body_struct):
+        if isinstance(item, (str, bytes)):
+            subtype = (item.decode('ascii', errors='replace') if isinstance(item, bytes) else item).upper()
+            break
+    # ALTERNATIVE = plain+html variants of the same content; RELATED = HTML + inline images.
+    # Neither carries downloadable attachments.
+    if subtype in ('ALTERNATIVE', 'RELATED'):
+        return 0
+    return 1
 
 
 # ── Full body fetch ────────────────────────────────────────────────────────────
@@ -482,12 +488,12 @@ def fetch_body(message_db_id: int, account_id: int, uid: int,
             INSERT OR REPLACE INTO message_bodies (message_id, body_text, body_html)
             VALUES (?, ?, ?)
         """, (message_db_id, parsed["body_text"], parsed["body_html"]))
+        atts = parsed.get("attachments", [])
         conn.execute(
-            "UPDATE messages SET body_fetched=1, snippet=? WHERE id=?",
-            (parsed["snippet"], message_db_id)
+            "UPDATE messages SET body_fetched=1, snippet=?, has_attachments=? WHERE id=?",
+            (parsed["snippet"], 1 if atts else 0, message_db_id)
         )
-        # Store attachments
-        for att in parsed.get("attachments", []):
+        for att in atts:
             conn.execute("""
                 INSERT INTO attachments (message_id, filename, content_type, size)
                 VALUES (?, ?, ?, ?)

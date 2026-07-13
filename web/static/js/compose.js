@@ -3,21 +3,22 @@
 // Prefix: _cmp
 // ═══════════════════════════════════════════════════════════════════════════
 
+let _cmpFiles = [];  // File objects staged for send
+
 function composeNew(accountId = null) {
-  _cmpOpen({ title: 'New Message', subject: '', to: '', body: '', replyMsgId: null, references: null, accountId });
+  _cmpOpen({ title: 'New Message', subject: '', to: '', body: '', accountId });
 }
 
 function composeReply(msg, draftBody) {
-  const subject = (msg.subject || '').startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
+  const subject   = (msg.subject || '').startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
   const quoteDate = fmtDate(msg.date);
   const quoteName = msg.from_name || msg.from_addr || '';
   const quoteBody = (msg.body_text || '').trim().split('\n').map(l => '> ' + l).join('\n');
-  const body = draftBody || `\n\n\nOn ${quoteDate}, ${quoteName} wrote:\n${quoteBody}`;
+  const body      = draftBody || `\n\n\nOn ${quoteDate}, ${quoteName} wrote:\n${quoteBody}`;
   _cmpOpen({
     title: 'Reply',
     to: msg.from_addr || '',
-    subject,
-    body,
+    subject, body,
     replyMsgId: msg.message_id,
     references: msg.message_id,
     accountId: msg.account_id,
@@ -25,25 +26,21 @@ function composeReply(msg, draftBody) {
 }
 
 function composeReplyAll(msg) {
-  const subject = (msg.subject || '').startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
+  const subject  = (msg.subject || '').startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
   const ownEmail = (msg.account_email || '').toLowerCase();
-
-  const _parse = (json) => { try { return JSON.parse(json || '[]'); } catch(e) { return []; } };
-  const ccList = [..._parse(msg.to_addrs), ..._parse(msg.cc_addrs)]
+  const _parse   = (json) => { try { return JSON.parse(json || '[]'); } catch(e) { return []; } };
+  const ccList   = [..._parse(msg.to_addrs), ..._parse(msg.cc_addrs)]
     .filter(a => (a.addr || '').toLowerCase() !== ownEmail)
     .map(a => a.name ? `${a.name} <${a.addr}>` : a.addr);
-
   const quoteDate = fmtDate(msg.date);
   const quoteName = msg.from_name || msg.from_addr || '';
   const quoteBody = (msg.body_text || '').trim().split('\n').map(l => '> ' + l).join('\n');
-  const body = `\n\n\nOn ${quoteDate}, ${quoteName} wrote:\n${quoteBody}`;
-
+  const body      = `\n\n\nOn ${quoteDate}, ${quoteName} wrote:\n${quoteBody}`;
   _cmpOpen({
     title: 'Reply All',
     to: msg.from_addr || '',
     cc: ccList.join(', '),
-    subject,
-    body,
+    subject, body,
     replyMsgId: msg.message_id,
     references: msg.message_id,
     accountId: msg.account_id,
@@ -51,22 +48,17 @@ function composeReplyAll(msg) {
 }
 
 function composeForward(msg) {
-  const subject = (msg.subject || '').startsWith('Fwd:') ? msg.subject : `Fwd: ${msg.subject}`;
+  const subject   = (msg.subject || '').startsWith('Fwd:') ? msg.subject : `Fwd: ${msg.subject}`;
   const quoteDate = fmtDate(msg.date);
   const quoteFrom = msg.from_name ? `${msg.from_name} <${msg.from_addr}>` : msg.from_addr;
-  const body = `\n\n\n---------- Forwarded message ----------\nFrom: ${quoteFrom}\nDate: ${quoteDate}\nSubject: ${msg.subject}\n\n${(msg.body_text || '').trim()}`;
-  _cmpOpen({
-    title: 'Forward',
-    to: '',
-    subject,
-    body,
-    accountId: msg.account_id,
-  });
+  const body      = `\n\n\n---------- Forwarded message ----------\nFrom: ${quoteFrom}\nDate: ${quoteDate}\nSubject: ${msg.subject}\n\n${(msg.body_text || '').trim()}`;
+  _cmpOpen({ title: 'Forward', to: '', subject, body, accountId: msg.account_id });
 }
 
 function _cmpOpen(opts) {
   const existing = document.getElementById('cmp-modal');
   if (existing) existing.remove();
+  _cmpFiles = [];
 
   const hasBcc = !!(opts.bcc);
   const bd = document.createElement('div');
@@ -77,8 +69,8 @@ function _cmpOpen(opts) {
   bd.innerHTML = `<div class="modal-box cmp-box">
     <div class="modal-hdr">
       <div class="modal-title">${esc(opts.title || 'New Message')}</div>
-      <button class="cmp-bcc-btn" id="cmp-bcc-btn" onclick="_cmpToggleBcc()" title="Add BCC"${hasBcc ? ' style="display:none"' : ''}>+ BCC</button>
-      <button class="det-close" onclick="document.getElementById('cmp-modal').remove()">✕</button>
+      <button class="cmp-bcc-btn" id="cmp-bcc-btn" onclick="_cmpToggleBcc()"${hasBcc ? ' style="display:none"' : ''}>+ BCC</button>
+      <button class="det-close" onclick="_cmpClose()">✕</button>
     </div>
     <div class="modal-body">
       <div class="cmp-field">
@@ -102,9 +94,13 @@ function _cmpOpen(opts) {
         <input class="cmp-input" id="cmp-subject" type="text" placeholder="Subject" value="${esc(opts.subject || '')}">
       </div>
       <textarea class="cmp-body" id="cmp-body" placeholder="Write your message…">${esc(opts.body || '')}</textarea>
+      <div class="cmp-attach-bar" id="cmp-attach-bar" style="display:none"></div>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('cmp-modal').remove()">Cancel</button>
+      <button class="btn btn-outline btn-sm cmp-attach-btn" onclick="document.getElementById('cmp-file-input').click()">&#128206; Attach</button>
+      <input type="file" id="cmp-file-input" multiple style="display:none" onchange="_cmpFilesAdded(this)">
+      <span style="flex:1"></span>
+      <button class="btn btn-outline btn-sm" onclick="_cmpClose()">Cancel</button>
       <button class="btn btn-primary btn-sm" id="cmp-send-btn" onclick="_cmpSend()">Send →</button>
     </div>
   </div>`;
@@ -115,13 +111,17 @@ function _cmpOpen(opts) {
   bd._replyMsgId = opts.replyMsgId || null;
   bd._references = opts.references || null;
 
-  // Focus: empty To → focus To; otherwise focus body at top
   if (!opts.to) {
     document.getElementById('cmp-to')?.focus();
   } else {
     const bodyEl = document.getElementById('cmp-body');
     if (bodyEl) { bodyEl.focus(); bodyEl.setSelectionRange(0, 0); }
   }
+}
+
+function _cmpClose() {
+  document.getElementById('cmp-modal')?.remove();
+  _cmpFiles = [];
 }
 
 function _cmpToggleBcc() {
@@ -131,6 +131,27 @@ function _cmpToggleBcc() {
   field.style.display = '';
   if (btn) btn.style.display = 'none';
   document.getElementById('cmp-bcc')?.focus();
+}
+
+function _cmpFilesAdded(input) {
+  for (const f of input.files) _cmpFiles.push(f);
+  input.value = '';
+  _cmpRenderAttachBar();
+}
+
+function _cmpRemoveFile(idx) {
+  _cmpFiles.splice(idx, 1);
+  _cmpRenderAttachBar();
+}
+
+function _cmpRenderAttachBar() {
+  const bar = document.getElementById('cmp-attach-bar');
+  if (!bar) return;
+  if (_cmpFiles.length === 0) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = '';
+  bar.innerHTML = _cmpFiles.map((f, i) =>
+    `<span class="cmp-att-chip">&#128206; ${esc(f.name)}<span class="cmp-att-size">${_emFmtSize(f.size)}</span><button class="cmp-att-remove" onclick="_cmpRemoveFile(${i})" title="Remove">✕</button></span>`
+  ).join('');
 }
 
 async function _cmpPopulateAccounts(preferredId) {
@@ -162,24 +183,22 @@ async function _cmpSend() {
   btn.textContent = 'Sending…';
 
   try {
-    const payload = {
-      account_id: accountId,
-      to, subject, body,
-      reply_to_msg_id: modal._replyMsgId,
-      references: modal._references,
-    };
-    if (cc)  payload.cc  = cc;
-    if (bcc) payload.bcc = bcc;
+    const fd = new FormData();
+    fd.append('account_id', accountId);
+    fd.append('to', to);
+    fd.append('subject', subject);
+    fd.append('body', body);
+    if (cc)  fd.append('cc', cc);
+    if (bcc) fd.append('bcc', bcc);
+    if (modal._replyMsgId) fd.append('reply_to_msg_id', modal._replyMsgId);
+    if (modal._references) fd.append('references', modal._references);
+    for (const f of _cmpFiles) fd.append('attachments', f, f.name);
 
-    const r = await fetch('/api/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const r = await fetch('/api/send', { method: 'POST', body: fd });
     const j = await r.json();
     if (j.ok) {
       toast('Message sent');
-      modal.remove();
+      _cmpClose();
     } else {
       toast(j.error || 'Send failed', 'err');
       btn.disabled = false;

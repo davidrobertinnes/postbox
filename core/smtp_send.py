@@ -5,6 +5,8 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from email.utils import formatdate, make_msgid
 from email.header import Header
 
@@ -21,10 +23,11 @@ def send_message(
     reply_to_msg_id: str | None = None,
     references: str | None = None,
     body_html: str | None = None,
+    attachments: list[tuple[str, str, bytes]] | None = None,
 ) -> tuple[bool, str]:
     """
-    Send a message via SMTP.
-    Returns (ok, message).
+    Send a message via SMTP. Returns (ok, message).
+    attachments: list of (filename, content_type, bytes)
     account dict needs: smtp_host, smtp_port, smtp_ssl, username, id
     """
     auth_type = account.get("auth_type", "password")
@@ -53,28 +56,46 @@ def send_message(
     bcc_list = [bcc] if isinstance(bcc, str) else (bcc or [])
     all_rcpt = to_list + cc_list + bcc_list
 
-    msg = MIMEMultipart("alternative") if body_html else MIMEText(body, "plain", "utf-8")
+    # Build body part
+    if body_html:
+        body_part = MIMEMultipart("alternative")
+        body_part.attach(MIMEText(body, "plain", "utf-8"))
+        body_part.attach(MIMEText(body_html, "html", "utf-8"))
+    else:
+        body_part = MIMEText(body, "plain", "utf-8")
 
-    msg["From"] = f"{account.get('name', '')} <{account['email']}>"
-    msg["To"] = ", ".join(to_list)
+    # Wrap in multipart/mixed when there are attachments
+    if attachments:
+        msg = MIMEMultipart("mixed")
+        msg.attach(body_part)
+        for filename, content_type, data in attachments:
+            maintype, subtype = (content_type.split("/", 1) if "/" in content_type
+                                 else ("application", "octet-stream"))
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(data)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment",
+                            filename=Header(filename, "utf-8").encode())
+            msg.attach(part)
+    else:
+        msg = body_part
+
+    msg["From"]    = f"{account.get('name', '')} <{account['email']}>"
+    msg["To"]      = ", ".join(to_list)
     if cc_list:
-        msg["Cc"] = ", ".join(cc_list)
+        msg["Cc"]  = ", ".join(cc_list)
     msg["Subject"] = Header(subject, "utf-8")
-    msg["Date"] = formatdate(localtime=True)
+    msg["Date"]    = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid()
 
     if reply_to_msg_id:
         msg["In-Reply-To"] = reply_to_msg_id
-        msg["References"] = f"{references} {reply_to_msg_id}".strip() if references else reply_to_msg_id
-
-    if body_html:
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-        msg.attach(MIMEText(body_html, "html", "utf-8"))
+        msg["References"]  = f"{references} {reply_to_msg_id}".strip() if references else reply_to_msg_id
 
     try:
-        port    = int(account.get("smtp_port", 587))
-        host    = account["smtp_host"]
-        use_ssl = bool(account.get("smtp_ssl", 0))
+        port     = int(account.get("smtp_port", 587))
+        host     = account["smtp_host"]
+        use_ssl  = bool(account.get("smtp_ssl", 0))
         username = account.get("username") or account["email"]
 
         def _smtp_auth(s):

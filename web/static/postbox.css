@@ -626,6 +626,42 @@ html, body {
   flex-shrink: 0;
 }
 .cmp-bcc-btn:hover { color: var(--accent); background: var(--accent-dim); }
+.cmp-attach-btn { flex-shrink: 0; }
+.cmp-attach-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+.cmp-att-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-dim);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--ink2);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmp-att-size { color: var(--ink3); font-size: 11px; flex-shrink: 0; }
+.cmp-att-remove {
+  background: none;
+  border: none;
+  color: var(--ink3);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.cmp-att-remove:hover { color: var(--red); }
 
 /* ══════════════════════════════════════════════════════════════════════
    FORM ELEMENTS

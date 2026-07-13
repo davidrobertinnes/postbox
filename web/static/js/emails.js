@@ -15,8 +15,94 @@ let _emSort          = { col: 'date', dir: -1 };
 let _emPriorityFilter  = null;     // null=all, 1=urgent only
 let _emCategoryFilter  = null;     // null=all, or category string
 let _emAccountId       = null;     // null=all accounts, or account id
+let _emSelectedId      = null;     // keyboard-selected message id
+let _emOpenMsg         = null;     // message currently shown in detail panel
 
 const _EM_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3aed'];
+
+function _emSelectMsg(id) {
+  _emSelectedId = id;
+  document.querySelectorAll('tr.em-selected').forEach(r => r.classList.remove('em-selected'));
+  const row = document.querySelector(`tr[data-msgid="${id}"]`);
+  if (row) { row.classList.add('em-selected'); row.scrollIntoView({ block: 'nearest' }); }
+}
+
+function _emSetTitleBadge() {
+  apiFetch('/api/emails/unread_count').then(r => {
+    const n = r.unread || 0;
+    const base = document.title.replace(/^\(\d+\)\s*/, '');
+    document.title = n > 0 ? `(${n}) ${base}` : base;
+  }).catch(() => {});
+}
+
+function _emKeyHandler(e) {
+  if (!document.getElementById('em-q')) return;  // not on emails page
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (document.querySelector('.modal-bd')) return;
+
+  const panelOpen = document.querySelector('.det-panel')?.classList.contains('open');
+  if (!panelOpen) _emOpenMsg = null;
+
+  switch (e.key) {
+    case 'j':
+    case 'ArrowDown': {
+      e.preventDefault();
+      const cur = _emOpenMsg?.id ?? _emSelectedId;
+      const idx  = _emMessages.findIndex(m => m.id === cur);
+      const next = _emMessages[idx + 1];
+      if (!next) break;
+      _emSelectMsg(next.id);
+      if (panelOpen) emOpen(next.id, next.thread_id);
+      break;
+    }
+    case 'k':
+    case 'ArrowUp': {
+      e.preventDefault();
+      const cur = _emOpenMsg?.id ?? _emSelectedId;
+      const idx  = _emMessages.findIndex(m => m.id === cur);
+      const prev = _emMessages[Math.max(0, idx - 1)];
+      if (!prev || prev.id === cur) break;
+      _emSelectMsg(prev.id);
+      if (panelOpen) emOpen(prev.id, prev.thread_id);
+      break;
+    }
+    case 'Enter': {
+      if (!panelOpen && _emSelectedId) {
+        const msg = _emMessages.find(m => m.id === _emSelectedId);
+        if (msg) emOpen(msg.id, msg.thread_id);
+      }
+      break;
+    }
+    case 'r':
+      if (_emOpenMsg) composeReply(_emOpenMsg);
+      break;
+    case 'a':
+      if (_emOpenMsg) composeReplyAll(_emOpenMsg);
+      break;
+    case 'f':
+      if (_emOpenMsg) composeForward(_emOpenMsg);
+      break;
+    case 'e': {
+      const target = _emOpenMsg || _emMessages.find(m => m.id === _emSelectedId);
+      if (target) _emTrash(target.id);
+      break;
+    }
+    case 'u':
+      if (_emOpenMsg) _emMarkUnread(_emOpenMsg.id);
+      break;
+    case 'n':
+      composeNew(_emAccountId);
+      break;
+    case '/':
+      e.preventDefault();
+      document.getElementById('em-q')?.focus();
+      break;
+    case 'Escape':
+      if (panelOpen) { detClose(); _emOpenMsg = null; }
+      break;
+  }
+}
 
 const _EM_SORT_COLS = {
   from_name: (a, b) => (a.from_name||a.from_addr||'').localeCompare(b.from_name||b.from_addr||''),
@@ -41,6 +127,10 @@ async function pageEmails(folder, folderName, accountId = null) {
   _emPriorityFilter = null;
   _emCategoryFilter = null;
   _emAccountId      = accountId;
+  _emSelectedId     = null;
+  _emOpenMsg        = null;
+  document.removeEventListener('keydown', _emKeyHandler);
+  document.addEventListener('keydown', _emKeyHandler);
   const mc = document.getElementById('module-content');
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
@@ -64,6 +154,10 @@ async function pageEmailsFolder(folderId, folderDisplayName) {
   _emOffset         = 0;
   _emCategoryFilter = null;
   _emAccountId      = null;
+  _emSelectedId     = null;
+  _emOpenMsg        = null;
+  document.removeEventListener('keydown', _emKeyHandler);
+  document.addEventListener('keydown', _emKeyHandler);
   document.getElementById('page-title').textContent = _emFolderName;
   const mc = document.getElementById('module-content');
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
@@ -94,8 +188,10 @@ async function _emLoad(append = false) {
   }
   _emTotal = data.total || 0;
   _emApplySort();
+  if (!append && !_emSelectedId && _emMessages.length) _emSelectedId = _emMessages[0].id;
   _emRender();
   if (!append && _emFolder === 'inbox' && !_emPriorityFilter) _emAutoTriage();
+  if (!append && _emFolder === 'inbox') _emSetTitleBadge();
 }
 
 async function _emLoadMore() {
@@ -355,7 +451,7 @@ function _emRow(msg) {
   const categoryHtml = (category && category !== 'other' && category !== 'marketing' && category !== 'notification')
     ? `<span class="em-category" style="color:${_EM_CATEGORIES[category]||'#555'}">${esc(category)}</span>` : '';
 
-  return `<tr class="em-row${isUnread ? ' unread' : ''}${priorityClass}" data-msgid="${msg.id}" onclick="emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
+  return `<tr class="em-row${isUnread ? ' unread' : ''}${priorityClass}${msg.id === _emSelectedId ? ' em-selected' : ''}" data-msgid="${msg.id}" onclick="_emSelectMsg(${msg.id});emOpen(${msg.id}, '${esc(msg.thread_id || '')}')">
     <td><span class="em-acct-dot" style="background:${colour}" title="${esc(msg.account_name||'')}"></span></td>
     <td class="em-from">${priority === 1 ? '<span class="em-urgent-flag" title="Urgent">&#9873;</span> ' : ''}${esc(displayFrom)}</td>
     <td class="em-subject">${esc(msg.subject || '(no subject)')}${categoryHtml}</td>
@@ -412,10 +508,12 @@ async function emOpen(msgId, threadId) {
     const msg = await apiFetch(`/api/emails/${msgId}`);
     document.getElementById('det-title').textContent = msg.subject || '(no subject)';
     _emRenderDetail(msg, threadId);
+    _emOpenMsg = msg;
     if (threadId) _emLoadSummary(threadId);
     if (threadId) _emLoadActions(threadId);
     fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
     document.querySelector(`tr[data-msgid="${msgId}"]`)?.classList.remove('unread');
+    if (_emFolder === 'inbox') _emSetTitleBadge();
   } catch(e) {
     document.getElementById('det-body').innerHTML = `<div class="state-error">${esc(e.message)}</div>`;
   }
@@ -656,7 +754,7 @@ async function _emMarkAllRead() {
       return { ...m, flags: JSON.stringify(flags) };
     });
     _emRender(true);
-    if (n > 0) toast(`Marked ${n} message${n !== 1 ? 's' : ''} as read`);
+    if (n > 0) { toast(`Marked ${n} message${n !== 1 ? 's' : ''} as read`); _emSetTitleBadge(); }
   } catch(e) { toast('Failed: ' + e.message, 'err'); }
 }
 
@@ -891,6 +989,7 @@ async function _emRenderThread(msgs, selectedId, threadId) {
     const bodyEl  = document.getElementById(`th-body-${expandId}`);
     if (bodyEl) _emRenderThreadBody(fullMsg, bodyEl);
     _emRenderThreadFoot(fullMsg, threadId);
+    _emOpenMsg = fullMsg;
   } catch(e) {
     const bodyEl = document.getElementById(`th-body-${expandId}`);
     if (bodyEl) bodyEl.innerHTML = `<div class="state-error">Failed to load message</div>`;
@@ -1015,6 +1114,7 @@ async function _emToggleThreadMsg(msgId) {
       const msg = await apiFetch(`/api/emails/${msgId}`);
       _emRenderThreadBody(msg, body);
       _emRenderThreadFoot(msg, msg.thread_id);
+      _emOpenMsg = msg;
       fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
       card.classList.remove('unread');
       document.querySelector(`tr[data-msgid="${msgId}"]`)?.classList.remove('unread');

@@ -949,6 +949,7 @@ html, body {
 /* ══════════════════════════════════════════════════════════════════════
    STAR / FLAG
 ══════════════════════════════════════════════════════════════════════ */
+.em-row.em-selected { background: var(--accent-light, rgba(24,95,165,.08)) !important; outline: 2px solid var(--accent); outline-offset: -2px; }
 .em-star-cell { text-align: center; padding: 0 4px; }
 .em-star      { cursor: pointer; font-size: 15px; color: var(--ink3); user-select: none; }
 .em-star:hover        { color: var(--amber); }

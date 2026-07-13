@@ -27,7 +27,8 @@ const _EM_SORT_COLS = {
 // Called by navigate() for role-based folders (inbox/sent/drafts/trash/all)
 // accountId is optional — pass to pre-filter to a specific account (from sidebar account sections)
 async function pageEmails(folder, folderName, accountId = null) {
-  _emFolder        = folder || 'inbox';
+  const _folderAlias = { junk: 'spam' };
+  _emFolder        = _folderAlias[folder] || folder || 'inbox';
   _emFolderId      = null;
   _emFolderName    = folderName || { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk', all:'All Mail' }[_emFolder] || _emFolder;
   _emSearch         = '';

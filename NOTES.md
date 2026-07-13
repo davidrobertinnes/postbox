@@ -2,6 +2,20 @@
 
 ## Current state (2026-07-14)
 
+### Session 2026-07-14 (6) — draft saving, thread/conversation view
+
+- **Draft saving** — "Save Draft" button in compose footer; `POST /api/drafts` creates, `PUT /api/drafts/<id>` updates; `_draftId` tracked on modal so repeated saves update in place; sending auto-deletes the draft server-side via `draft_id` in FormData; clicking a draft message in the Drafts folder reopens compose pre-populated (BCC and reply context restored from `draft_meta` JSON); drafts stored in messages table with `\Draft` flag, inserted into Drafts folder (created if missing)
+- **Thread/conversation view** — opening a message with thread siblings renders a collapsible conversation view; all messages shown chronologically as cards; most-recent message pre-expanded with full body + attachments; body lazy-fetched from IMAP on first expand of a collapsed message; footer (Reply, Reply All, Forward, AI Draft, Move, Star, Spam, Delete) updates on expand; falls back to single-message view for threads of 1; `/api/threads/<thread_id>` extended with `cc_addrs`, `folder_role`, `account_email`, `has_attachments`, `body_fetched`
+
+### Next items (priority order)
+
+1. **Google verification** — submit for production publishing to remove 7-day token limit and 100-user cap
+2. **Remaining UX gaps** — keyboard shortcuts (j/k/r/e), undo trash, contact autocomplete, tab unread badge, starred folder, print view
+3. **Packaging** — release bundle / installer for Dogbox Mailman
+4. **Microsoft OAuth testing** — get Azure app registered and test end-to-end (deferred — Azure requires credit card)
+
+---
+
 ### Session 2026-07-14 (5) — empty trash, spam/unspam, filter rules, whitelist/blacklist, read receipts, offline prefetch, import
 
 - **Empty Trash** — `POST /api/emails/empty_trash` calls `imap_actions.empty_trash()`; IMAP EXPUNGE on trash folder; DB deletes all messages in trash for account; "Empty Trash" button in toolbar (visible in trash folder)

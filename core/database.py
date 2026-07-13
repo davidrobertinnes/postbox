@@ -94,6 +94,12 @@ def initialise_database(db_path: str) -> None:
         cached_at TEXT
     )""")
 
+    # Indices
+    c.execute("CREATE INDEX IF NOT EXISTS idx_msg_account_folder ON messages(account_id, folder_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_msg_date ON messages(date)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_folders_role ON folders(role)")
+
     # Migrations — add columns to existing tables if not present
     try:
         c.execute("ALTER TABLE accounts ADD COLUMN needs_reauth INTEGER DEFAULT 0")

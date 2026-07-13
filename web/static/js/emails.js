@@ -331,7 +331,7 @@ async function _emBulkMove(category) {
 function _emRow(msg) {
   const acctIdx  = _emAccounts.findIndex(a => a.id === msg.account_id);
   const colour   = _EM_COLOURS[Math.max(0, acctIdx) % _EM_COLOURS.length];
-  const isUnread = !(msg.flags || '').includes('Seen');
+  const isUnread = !JSON.parse(msg.flags || '[]').includes('\\Seen');
   const displayFrom = msg.from_name || msg.from_addr || '(unknown)';
   const priority = msg.ai_priority;
   const category = msg.ai_category;

@@ -376,8 +376,16 @@ def _store_envelope(conn, account_id: int, folder_id: int, uid: int, data: dict)
     in_reply_to = (_decode_imap_str(env.in_reply_to) or "").strip()
     date_str = env.date.strftime("%Y-%m-%dT%H:%M:%S") if env.date else None
 
-    # Thread ID: use In-Reply-To root or own Message-ID
-    thread_id = in_reply_to if in_reply_to else message_id
+    # Thread ID: resolve to the root thread by looking up the parent's thread_id.
+    # This chains A→B→C correctly even for long threads.
+    if in_reply_to:
+        parent = conn.execute(
+            "SELECT thread_id FROM messages WHERE message_id=? AND account_id=?",
+            (in_reply_to, account_id)
+        ).fetchone()
+        thread_id = parent["thread_id"] if parent else in_reply_to
+    else:
+        thread_id = message_id
 
     # Detect attachments via BODYSTRUCTURE (rough heuristic)
     body_struct = data.get(b"BODYSTRUCTURE")

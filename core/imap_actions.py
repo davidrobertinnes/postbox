@@ -64,7 +64,10 @@ def _set_flags_db(conn, message_db_id: int, folder_id: int, add: list, remove: l
 def mark_read(message_db_id: int, db_path: str) -> bool:
     conn = get_connection(db_path)
     row = _load_message(conn, message_db_id)
-    if not row or "Seen" in (row["flags"] or ""):
+    if not row:
+        conn.close()
+        return True
+    if "\\Seen" in json.loads(row["flags"] or "[]"):
         conn.close()
         return True  # already read
 
@@ -92,7 +95,7 @@ def mark_unread(message_db_id: int, db_path: str) -> bool:
         conn.close()
         return False
 
-    _set_flags_db(conn, message_db_id, row["folder_id"], add=[], remove=["\\Seen", "\\\\Seen", "Seen"])
+    _set_flags_db(conn, message_db_id, row["folder_id"], add=[], remove=["\\Seen"])
     conn.commit()
     uid, account_id, folder_name = row["uid"], row["account_id"], row["folder_name"]
     conn.close()

@@ -2,6 +2,23 @@
 
 ## Current state (2026-07-14)
 
+### Session 2026-07-14 (7) — keyboard shortcuts, tab unread badge
+
+- **Keyboard shortcuts** — full vim-style navigation: j/↓ next, k/↑ prev, Enter open, r reply, a reply-all, f forward, e trash, u mark-unread, n compose, / focus search, Esc close panel; j/k auto-advance through messages when panel is already open; suppressed when typing in inputs or a modal is open; listener registered on page enter, removed on re-entry to prevent duplicates; selected row gets accent outline via `.em-selected`
+- **Tab unread badge** — `document.title` prefixed with `(N)` when inbox has unread messages; updates on inbox load, mark-all-read, and after opening a message; strips any existing prefix before applying new count
+
+### Next items (priority order)
+
+1. **Undo trash** — 5-second toast with Undo before IMAP expunge fires
+2. **Starred folder** — sidebar "Starred" item showing all flagged messages across folders/accounts
+3. **Contact autocomplete** — To/CC/BCC fields suggest from a contacts module (contacts module needed first)
+4. **Print email** — clean print view button in detail footer
+5. **Packaging** — release bundle / installer for Dogbox Mailman
+6. **Google verification** — remove 7-day OAuth token limit and 100-user cap
+7. **Microsoft OAuth testing** — get Azure app registered and test end-to-end
+
+---
+
 ### Session 2026-07-14 (6) — draft saving, thread/conversation view
 
 - **Draft saving** — "Save Draft" button in compose footer; `POST /api/drafts` creates, `PUT /api/drafts/<id>` updates; `_draftId` tracked on modal so repeated saves update in place; sending auto-deletes the draft server-side via `draft_id` in FormData; clicking a draft message in the Drafts folder reopens compose pre-populated (BCC and reply context restored from `draft_meta` JSON); drafts stored in messages table with `\Draft` flag, inserted into Drafts folder (created if missing)

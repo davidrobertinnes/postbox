@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- web/static/js/emails.js: `_emSelectedId` and `_emOpenMsg` module state variables; `_emSelectMsg(id)` updates DOM selection class and scrolls row into view; `_emKeyHandler(e)` — j/↓ next message (auto-opens when panel open), k/↑ previous, Enter open selected, r reply, a reply-all, f forward, e trash selected/open, u mark unread, n compose new, / focus search, Escape close panel; handler registered with `addEventListener` on page enter and removed first to prevent duplicates; suppressed when focus is in an input/textarea or a modal is open; panel-open detection via `.det-panel.open` used to auto-clear `_emOpenMsg` and switch j/k to auto-advance mode; `_emOpenMsg` set after single-message load, after thread expanded-message fetch, and on `_emToggleThreadMsg` expand; `_emSetTitleBadge()` fetches `/api/emails/unread_count` and prefixes `document.title` with `(N)` — strips existing badge first; badge updated on inbox load, `_emMarkAllRead`, and after `emOpen` marks read
+- web/static/postbox.css: `.em-row.em-selected` — accent-tint background and 2px accent outline for keyboard focus indicator
+
 - core/database.py: `draft_meta TEXT` migration on messages table — stores BCC, reply_msg_id, references as JSON for draft messages
 - web/routes/compose.py: `POST /api/drafts` creates a draft message in the account's Drafts folder (created if missing); `PUT /api/drafts/<id>` updates subject/to/cc/body/meta; `DELETE /api/drafts/<id>` removes draft; `api_send()` accepts `draft_id` and deletes it server-side after successful send; `_get_or_create_drafts_folder()` helper finds or creates a local Drafts folder
 - web/routes/emails.py: `/api/threads/<thread_id>` extended — adds `cc_addrs`, `has_attachments`, `body_fetched`, `folder_role` (via folders JOIN), `account_email` (via accounts JOIN); required for thread view rendering and footer button wiring

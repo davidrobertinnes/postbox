@@ -372,6 +372,26 @@ def api_star(mid: int):
     return ok({"starred": starred})
 
 
+@bp.route("/api/emails/<int:mid>/restore", methods=["POST"])
+def api_restore(mid: int):
+    from core.imap_actions import move_message
+    conn = get_connection(db())
+    msg = conn.execute("SELECT account_id FROM messages WHERE id=?", (mid,)).fetchone()
+    if not msg:
+        conn.close()
+        return err("Message not found", 404)
+    inbox = conn.execute(
+        "SELECT id FROM folders WHERE account_id=? AND role='inbox' LIMIT 1",
+        (msg["account_id"],)
+    ).fetchone()
+    conn.close()
+    if not inbox:
+        return err("Inbox not found")
+    if move_message(mid, inbox["id"], db()):
+        return ok()
+    return err("Could not restore message")
+
+
 @bp.route("/api/emails/<int:mid>/move", methods=["POST"])
 def api_move(mid: int):
     from core.imap_actions import move_message

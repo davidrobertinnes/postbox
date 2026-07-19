@@ -7,12 +7,16 @@
 - **Keyboard shortcuts** — full vim-style navigation: j/↓ next, k/↑ prev, Enter open, r reply, a reply-all, f forward, e trash, u mark-unread, n compose, / focus search, Esc close panel; j/k auto-advance through messages when panel is already open; suppressed when typing in inputs or a modal is open; listener registered on page enter, removed on re-entry to prevent duplicates; selected row gets accent outline via `.em-selected`
 - **Tab unread badge** — `document.title` prefixed with `(N)` when inbox has unread messages; updates on inbox load, mark-all-read, and after opening a message; strips any existing prefix before applying new count
 
+### Session 2026-07-19 — undo trash
+
+- **Undo trash** — `_emTrash()` now defers the IMAP call by 5 s; UI removes the message immediately; a toast with an Undo button appears; clicking Undo cancels the timer, splices the message back into `_emMessages` at its original index, and re-selects it; messages already in Trash are permanently deleted immediately (no undo); pending deferred trash is committed synchronously on folder navigation (`pageEmails`, `pageEmailsFolder`); `_emUndoToast()` helper added; `.toast-undo` / `.toast-undo-btn` CSS added to `postbox.css`; call sites cleaned up (no longer pass `btn` arg)
+
 ### Next items (priority order)
 
-1. **Undo trash** — 5-second toast with Undo before IMAP expunge fires
-2. **Starred folder** — sidebar "Starred" item showing all flagged messages across folders/accounts
-3. **Contact autocomplete** — To/CC/BCC fields suggest from a contacts module (contacts module needed first)
-4. **Print email** — clean print view button in detail footer
+1. **Starred folder** — sidebar "Starred" item showing all flagged messages across folders/accounts
+2. **Contact autocomplete** — To/CC/BCC fields suggest from a contacts module (contacts module needed first)
+3. **Print email** — clean print view button in detail footer
+4. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
 5. **Packaging** — release bundle / installer for Dogbox Mailman
 6. **Google verification** — remove 7-day OAuth token limit and 100-user cap
 7. **Microsoft OAuth testing** — get Azure app registered and test end-to-end

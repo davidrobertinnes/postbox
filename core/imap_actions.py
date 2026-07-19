@@ -209,7 +209,7 @@ def trash_message(message_db_id: int, db_path: str) -> bool:
     if moved and trash_folder_id:
         conn = get_connection(db_path)
         conn.execute(
-            "UPDATE messages SET folder_id=? WHERE id=?",
+            "UPDATE messages SET folder_id=?, trashed_at=datetime('now') WHERE id=?",
             (trash_folder_id, message_db_id)
         )
         conn.commit()
@@ -437,6 +437,47 @@ def toggle_starred(message_db_id: int, db_path: str) -> bool:
     except Exception as e:
         log.error("toggle_starred uid=%d: %s", uid, e)
     return now_starred
+
+
+def purge_old_trash(db_path: str, days: int = 30) -> int:
+    """Permanently delete trash messages trashed more than `days` days ago."""
+    from collections import defaultdict
+    conn = get_connection(db_path)
+    rows = conn.execute("""
+        SELECT m.id, m.uid, m.account_id, f.name as folder_name
+        FROM messages m
+        JOIN folders f ON f.id = m.folder_id
+        WHERE f.role = 'trash'
+          AND m.trashed_at IS NOT NULL
+          AND datetime(m.trashed_at) < datetime('now', ?)
+    """, (f"-{days} days",)).fetchall()
+    if not rows:
+        conn.close()
+        return 0
+
+    ids = [r["id"] for r in rows]
+    ph  = ",".join("?" * len(ids))
+    conn.execute(f"DELETE FROM message_bodies WHERE message_id IN ({ph})", ids)
+    conn.execute(f"DELETE FROM messages WHERE id IN ({ph})", ids)
+    conn.commit()
+    conn.close()
+
+    by_folder = defaultdict(list)
+    for r in rows:
+        by_folder[(r["account_id"], r["folder_name"])].append(r["uid"])
+
+    for (account_id, folder_name), uids in by_folder.items():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(folder_name, readonly=False)
+                client.add_flags(uids, ["\\Deleted"])
+                client.expunge()
+                client.logout()
+        except Exception as e:
+            log.error("purge_old_trash account=%d folder=%s: %s", account_id, folder_name, e)
+
+    return len(ids)
 
 
 def mark_all_read(message_ids: list, db_path: str) -> int:

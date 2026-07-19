@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- web/static/js/emails.js: `_emTrash()` refactored — UI removes message immediately; IMAP call deferred 5 s; undo toast with Undo button cancels timer and splices message back at original index; messages already in Trash are permanently expunged immediately (no undo); pending deferred trash committed on folder navigation; `_emUndoToast()` helper added; `_emPendingTrash` module-level state tracks deferred operation
+- web/static/js/emails.js: `_emRestore()` — calls `POST /api/emails/<id>/restore`, removes from Trash list, toasts "Restored to Inbox"
+- web/static/js/emails.js: detail and thread footers show "Restore to Inbox" button when `folder_role === 'trash'`; Delete button relabelled "Delete Forever" in Trash
+- web/static/postbox.css: `.toast-undo` and `.toast-undo-btn` styles for undo toast
+- web/routes/emails.py: `POST /api/emails/<id>/restore` — looks up message account, finds Inbox folder, calls `move_message()`
+- core/imap_actions.py: `purge_old_trash(db_path, days=30)` — deletes trash messages where `trashed_at` is older than 30 days; DB delete first, then IMAP EXPUNGE grouped by account/folder; skips messages with NULL `trashed_at` (pre-migration)
+- core/imap_actions.py: `trash_message()` — sets `trashed_at = datetime('now')` on DB row when moving message to Trash
+- core/database.py: migration adds `trashed_at TEXT` column to messages table
+- mail.py: background thread at startup calls `purge_old_trash()` and logs count if any purged
+
+- ops: Google OAuth consent screen published to production — Gmail refresh tokens no longer expire after 7 days; re-authenticated both Gmail accounts (Dogbox, David Innes)
+
 - web/static/js/emails.js: `_emSelectedId` and `_emOpenMsg` module state variables; `_emSelectMsg(id)` updates DOM selection class and scrolls row into view; `_emKeyHandler(e)` — j/↓ next message (auto-opens when panel open), k/↑ previous, Enter open selected, r reply, a reply-all, f forward, e trash selected/open, u mark unread, n compose new, / focus search, Escape close panel; handler registered with `addEventListener` on page enter and removed first to prevent duplicates; suppressed when focus is in an input/textarea or a modal is open; panel-open detection via `.det-panel.open` used to auto-clear `_emOpenMsg` and switch j/k to auto-advance mode; `_emOpenMsg` set after single-message load, after thread expanded-message fetch, and on `_emToggleThreadMsg` expand; `_emSetTitleBadge()` fetches `/api/emails/unread_count` and prefixes `document.title` with `(N)` — strips existing badge first; badge updated on inbox load, `_emMarkAllRead`, and after `emOpen` marks read
 - web/static/postbox.css: `.em-row.em-selected` — accent-tint background and 2px accent outline for keyboard focus indicator
 

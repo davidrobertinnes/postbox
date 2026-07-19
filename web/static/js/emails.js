@@ -17,6 +17,7 @@ let _emCategoryFilter  = null;     // null=all, or category string
 let _emAccountId       = null;     // null=all accounts, or account id
 let _emSelectedId      = null;     // keyboard-selected message id
 let _emOpenMsg         = null;     // message currently shown in detail panel
+let _emPendingTrash    = null;     // deferred trash: {timer, commit, done}
 
 const _EM_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3aed'];
 
@@ -117,6 +118,7 @@ function _emStopAutoRefresh() {
 // Called by navigate() for role-based folders (inbox/sent/drafts/trash/all)
 // accountId is optional — pass to pre-filter to a specific account (from sidebar account sections)
 async function pageEmails(folder, folderName, accountId = null) {
+  if (_emPendingTrash) { _emPendingTrash.commit(); _emPendingTrash = null; }
   _emStopAutoRefresh();
   const _folderAlias = { junk: 'spam' };
   _emFolder        = _folderAlias[folder] || folder || 'inbox';
@@ -146,6 +148,7 @@ async function pageEmails(folder, folderName, accountId = null) {
 
 // Called by sidebar folder list for specific folder by ID
 async function pageEmailsFolder(folderId, folderDisplayName) {
+  if (_emPendingTrash) { _emPendingTrash.commit(); _emPendingTrash = null; }
   _emStopAutoRefresh();
   _emFolder         = null;
   _emFolderId       = folderId;
@@ -646,7 +649,13 @@ function _emRenderDetail(msg, threadId) {
   unreadBtn.onclick = () => _emMarkUnread(msg.id);
   foot.appendChild(unreadBtn);
 
-  if (msg.folder_role === 'spam') {
+  if (msg.folder_role === 'trash') {
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'btn btn-outline btn-sm';
+    restoreBtn.textContent = 'Restore to Inbox';
+    restoreBtn.onclick = () => _emRestore(msg.id);
+    foot.appendChild(restoreBtn);
+  } else if (msg.folder_role === 'spam') {
     const unspamBtn = document.createElement('button');
     unspamBtn.className = 'btn btn-outline btn-sm';
     unspamBtn.textContent = 'Not Spam';
@@ -670,8 +679,8 @@ function _emRenderDetail(msg, threadId) {
 
   const delBtn = document.createElement('button');
   delBtn.className = 'btn btn-outline btn-sm btn-danger';
-  delBtn.textContent = 'Delete';
-  delBtn.onclick = () => _emTrash(msg.id, delBtn);
+  delBtn.textContent = msg.folder_role === 'trash' ? 'Delete Forever' : 'Delete';
+  delBtn.onclick = () => _emTrash(msg.id);
   foot.appendChild(delBtn);
 }
 
@@ -758,17 +767,80 @@ async function _emMarkAllRead() {
   } catch(e) { toast('Failed: ' + e.message, 'err'); }
 }
 
-async function _emTrash(msgId, btn) {
-  if (btn) { btn.textContent = 'Deleting...'; btn.disabled = true; }
+async function _emRestore(msgId) {
   try {
-    const r = await fetch(`/api/emails/${msgId}/trash`, { method: 'POST' }).then(r => r.json());
-    if (!r.ok) { toast(r.error || 'Delete failed', 'err'); if (btn) { btn.textContent = 'Delete'; btn.disabled = false; } return; }
+    const r = await fetch(`/api/emails/${msgId}/restore`, { method: 'POST' }).then(r => r.json());
+    if (!r.ok) { toast(r.error || 'Restore failed', 'err'); return; }
     detClose();
     _emMessages = _emMessages.filter(m => m.id !== msgId);
     _emTotal = Math.max(0, _emTotal - 1);
     _emRender(true);
-    toast('Moved to Trash');
-  } catch(e) { toast('Delete failed: ' + e.message, 'err'); if (btn) { btn.textContent = 'Delete'; btn.disabled = false; } }
+    toast('Restored to Inbox');
+  } catch(e) { toast('Restore failed: ' + e.message, 'err'); }
+}
+
+async function _emTrash(msgId) {
+  // Commit any previous deferred trash before queuing a new one
+  if (_emPendingTrash) { _emPendingTrash.commit(); _emPendingTrash = null; }
+
+  const idx     = _emMessages.findIndex(m => m.id === msgId);
+  const msg     = idx >= 0 ? _emMessages[idx] : null;
+  const inTrash = msg?.folder_role === 'trash' || _emFolder === 'trash';
+
+  detClose();
+  _emOpenMsg = null;
+  if (idx >= 0) {
+    _emMessages = _emMessages.filter(m => m.id !== msgId);
+    _emTotal = Math.max(0, _emTotal - 1);
+    _emRender(true);
+  }
+
+  // Already in trash — permanent delete, no undo offered
+  if (inTrash) {
+    try {
+      const r = await fetch(`/api/emails/${msgId}/trash`, { method: 'POST' }).then(r => r.json());
+      toast(r.ok ? 'Deleted permanently' : (r.error || 'Delete failed'), r.ok ? undefined : 'err');
+    } catch(e) { toast('Delete failed: ' + e.message, 'err'); }
+    return;
+  }
+
+  // Deferred trash — fire API after 5 s; Undo cancels it
+  const state = { done: false, timer: null };
+  state.commit = () => {
+    if (state.done) return;
+    state.done = true;
+    fetch(`/api/emails/${msgId}/trash`, { method: 'POST' }).catch(() => {});
+  };
+  state.timer = setTimeout(() => { state.commit(); _emPendingTrash = null; }, 5000);
+  _emPendingTrash = state;
+
+  _emUndoToast('Moved to Trash', () => {
+    if (state.done) return;
+    state.done = true;
+    clearTimeout(state.timer);
+    _emPendingTrash = null;
+    if (msg && idx >= 0) {
+      _emMessages.splice(idx, 0, msg);
+      _emTotal += 1;
+      _emRender(true);
+      _emSelectMsg(msgId);
+    }
+  });
+}
+
+function _emUndoToast(message, onUndo) {
+  const tc = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast toast-undo';
+  el.innerHTML = `<span>${esc(message)}</span><button class="toast-undo-btn">Undo</button>`;
+  tc.appendChild(el);
+  const dismiss = () => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s';
+    setTimeout(() => el.remove(), 300);
+  };
+  el.querySelector('.toast-undo-btn').addEventListener('click', () => { onUndo(); dismiss(); });
+  setTimeout(dismiss, 5500);
 }
 
 async function _emMoveModal(msg) {
@@ -1065,7 +1137,9 @@ function _emRenderThreadFoot(msg, threadId) {
 
   btn('Mark Unread', false, () => _emMarkUnread(msg.id));
 
-  if (msg.folder_role === 'spam') {
+  if (msg.folder_role === 'trash') {
+    btn('Restore to Inbox', false, () => _emRestore(msg.id));
+  } else if (msg.folder_role === 'spam') {
     btn('Not Spam', false, async () => {
       const r = await fetch(`/api/emails/${msg.id}/unspam`, { method: 'POST' }).then(r => r.json());
       if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Moved to Inbox'); }
@@ -1079,7 +1153,7 @@ function _emRenderThreadFoot(msg, threadId) {
     });
   }
 
-  const delBtn = btn('Delete', false, () => _emTrash(msg.id, delBtn));
+  const delBtn = btn(msg.folder_role === 'trash' ? 'Delete Forever' : 'Delete', false, () => _emTrash(msg.id));
   delBtn.classList.add('btn-danger');
 }
 

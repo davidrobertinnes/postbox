@@ -175,6 +175,18 @@ if __name__ == "__main__":
         target=start_all, args=(db_path,), daemon=True
     ).start()
 
+    # Purge trash messages older than 30 days (by email date)
+    def _purge_old_trash():
+        from core.imap_actions import purge_old_trash
+        try:
+            n = purge_old_trash(db_path)
+            if n:
+                print(f"  Purged {n} trash message{'s' if n != 1 else ''} older than 30 days")
+        except Exception as e:
+            logging.getLogger(__name__).error("purge_old_trash: %s", e)
+
+    threading.Thread(target=_purge_old_trash, daemon=True).start()
+
     def _open_browser():
         import time
         time.sleep(1.2)

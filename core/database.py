@@ -142,6 +142,10 @@ def initialise_database(db_path: str) -> None:
         c.execute("ALTER TABLE messages ADD COLUMN draft_meta TEXT")
     except Exception:
         pass
+    try:
+        c.execute("ALTER TABLE messages ADD COLUMN trashed_at TEXT")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()

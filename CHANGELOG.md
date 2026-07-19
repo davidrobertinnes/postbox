@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **dbox integration: unread badge** — dbox sidebar now shows a red unread-count badge sourced from `GET /api/ext/unread_count`; polls on load and every 2 minutes; badge hidden when count is zero or Mailman offline. No postbox code changed — work was entirely on the dbox side. (dbox: `web/templates/dashboard.html`, `web/routes/contacts.py`, `web/static/dbox.css`)
+
 - core/database.py: migration adds `priority INTEGER DEFAULT 0` column to rules table
 - core/rules.py: `_sender_matches()` helper supports `@domain.com` patterns for whitelist/blacklist; `apply_rules_to_message()` returns bool (True if any rule/list entry fired); ORDER BY priority DESC, id
 - web/routes/rules.py: `priority` field in CREATE/UPDATE; ORDER BY priority DESC; `POST /api/rules/run` applies active rules to inbox messages and returns `{processed, matched}` counts; sender_lists normalises bare domain entries to `@domain.com` on insert

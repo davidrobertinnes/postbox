@@ -35,10 +35,15 @@ No postbox code changed this session. Work was entirely on the dbox side:
 - **dbox: contact Emails tab** — `GET /api/contacts/<id>/emails` route added to dbox; calls Mailman `localhost:5200/api/ext/emails?contact=<email>` (stdlib urllib, 2-second timeout); returns `{emails, offline}`. "Emails" tab added to contact det-panel in dbox (only shown when contact has an email); renders subject, date, sender name, Mailman account badge, snippet; graceful "Mailman not running" offline state. (`dbox/web/routes/contacts.py`, `dbox/web/static/js/contacts.js`, `dbox/web/static/dbox.css`)
 - Mailman's `GET /api/ext/emails` and `GET /api/ext/unread_count` endpoints (added in Session 2026-07-19) are now being consumed by dbox.
 
+### Session 2026-07-20 (3) — dbox integration: unread badge
+
+No postbox code changed this session. Work was entirely on the dbox side:
+- **dbox: Mailman unread badge** — ✉ icon added to dbox sidebar footer; red badge shows unread count sourced from Mailman's `GET /api/ext/unread_count`; polls on load and every 2 minutes; badge hidden when count is zero or Mailman is offline; clicking icon opens Mailman in a new tab. New `GET /api/mailman/unread` proxy route added to dbox. (`dbox/web/templates/dashboard.html`, `dbox/web/routes/contacts.py`, `dbox/web/static/dbox.css`)
+
 ### Next items (priority order)
 
 1. **Rules UI overhaul** — ✓ done 2026-07-20
-2. **dbox unread badge** — dbox dashboard/nav to show Mailman unread count using `GET /api/ext/unread_count` (endpoint ready, dbox side not yet wired)
+2. **dbox unread badge** — ✓ done 2026-07-20
 3. **Print email** — clean print view button in detail footer
 4. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
 5. **Packaging** — release bundle / installer for Dogbox Mailman

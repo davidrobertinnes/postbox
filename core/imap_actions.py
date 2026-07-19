@@ -1,7 +1,7 @@
 """
 IMAP write-back operations — mark read/unread, trash, move.
 Each function makes its own IMAP connection (thread-safe, no shared state).
-Local DB is updated first; IMAP write is best-effort.
+Local DB is updated first (optimistic); IMAP write is best-effort in background.
 """
 import json
 import logging
@@ -170,56 +170,58 @@ def trash_message(message_db_id: int, db_path: str) -> bool:
         (account_id,)
     ).fetchone()
 
-    # Already in trash — expunge permanently
+    # Already in trash — delete from DB now, expunge IMAP in background
     if trash_row and folder_id == trash_row["id"]:
-        try:
-            client = _imap_connect(account_id, db_path)
-            if client:
-                client.select_folder(src_folder, readonly=False)
-                client.add_flags([uid], ["\\Deleted"])
-                client.expunge()
-                client.logout()
-        except Exception as e:
-            log.error("expunge uid=%d: %s", uid, e)
         conn.execute("DELETE FROM message_bodies WHERE message_id=?", (message_db_id,))
         conn.execute("DELETE FROM messages WHERE id=?", (message_db_id,))
         conn.commit()
         conn.close()
-        return True
 
-    # Move to trash
-    trash_folder_name = trash_row["name"] if trash_row else None
-    trash_folder_id   = trash_row["id"]   if trash_row else None
-    conn.close()
-
-    moved = False
-    if trash_folder_name:
-        try:
-            client = _imap_connect(account_id, db_path)
-            if client:
-                client.select_folder(src_folder, readonly=False)
-                try:
-                    client.move([uid], trash_folder_name)
-                except Exception:
-                    # Fallback: COPY + DELETE for servers without MOVE extension
-                    client.copy([uid], trash_folder_name)
+        def _imap_expunge():
+            try:
+                client = _imap_connect(account_id, db_path)
+                if client:
+                    client.select_folder(src_folder, readonly=False)
                     client.add_flags([uid], ["\\Deleted"])
                     client.expunge()
-                client.logout()
-                moved = True
-        except Exception as e:
-            log.error("trash uid=%d: %s", uid, e)
+                    client.logout()
+            except Exception as e:
+                log.error("expunge uid=%d: %s", uid, e)
 
-    if moved and trash_folder_id:
-        conn = get_connection(db_path)
+        threading.Thread(target=_imap_expunge, daemon=True).start()
+        return True
+
+    # Move to trash — update DB optimistically, IMAP move in background
+    trash_folder_name = trash_row["name"] if trash_row else None
+    trash_folder_id   = trash_row["id"]   if trash_row else None
+
+    if trash_folder_id:
         conn.execute(
             "UPDATE messages SET folder_id=?, trashed_at=datetime('now') WHERE id=?",
             (trash_folder_id, message_db_id)
         )
         conn.commit()
-        conn.close()
+    conn.close()
 
-    return moved
+    if trash_folder_name:
+        def _imap_move():
+            try:
+                client = _imap_connect(account_id, db_path)
+                if client:
+                    client.select_folder(src_folder, readonly=False)
+                    try:
+                        client.move([uid], trash_folder_name)
+                    except Exception:
+                        client.copy([uid], trash_folder_name)
+                        client.add_flags([uid], ["\\Deleted"])
+                        client.expunge()
+                    client.logout()
+            except Exception as e:
+                log.error("trash uid=%d: %s", uid, e)
+
+        threading.Thread(target=_imap_move, daemon=True).start()
+
+    return True
 
 
 def bulk_move_messages(message_ids: list, dst_folder_id: int, db_path: str) -> int:
@@ -242,41 +244,42 @@ def bulk_move_messages(message_ids: list, dst_folder_id: int, db_path: str) -> i
         FROM messages m JOIN folders f ON f.id = m.folder_id
         WHERE m.id IN ({placeholders}) AND m.account_id=?
     """, message_ids + [dst_account_id]).fetchall()
-    conn.close()
 
     if not rows:
+        conn.close()
         return 0
+
+    # Update DB optimistically
+    for r in rows:
+        conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (dst_folder_id, r["id"]))
+    conn.commit()
+    conn.close()
 
     from collections import defaultdict
     by_folder = defaultdict(list)
     for row in rows:
         by_folder[(row["account_id"], row["folder_name"])].append(dict(row))
 
-    moved = 0
-    for (account_id, src_folder_name), group in by_folder.items():
-        uids = [r["uid"] for r in group]
-        try:
-            client = _imap_connect(account_id, db_path)
-            if not client:
-                continue
-            client.select_folder(src_folder_name, readonly=False)
+    def _imap_bulk_move():
+        for (account_id, src_folder_name), group in by_folder.items():
+            uids = [r["uid"] for r in group]
             try:
-                client.move(uids, dst_folder_name)
-            except Exception:
-                client.copy(uids, dst_folder_name)
-                client.add_flags(uids, ["\\Deleted"])
-                client.expunge()
-            client.logout()
-            conn = get_connection(db_path)
-            for r in group:
-                conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (dst_folder_id, r["id"]))
-            conn.commit()
-            conn.close()
-            moved += len(group)
-        except Exception as e:
-            log.error("bulk_move src=%s account=%d: %s", src_folder_name, account_id, e)
+                client = _imap_connect(account_id, db_path)
+                if not client:
+                    continue
+                client.select_folder(src_folder_name, readonly=False)
+                try:
+                    client.move(uids, dst_folder_name)
+                except Exception:
+                    client.copy(uids, dst_folder_name)
+                    client.add_flags(uids, ["\\Deleted"])
+                    client.expunge()
+                client.logout()
+            except Exception as e:
+                log.error("bulk_move src=%s account=%d: %s", src_folder_name, account_id, e)
 
-    return moved
+    threading.Thread(target=_imap_bulk_move, daemon=True).start()
+    return len(rows)
 
 
 def empty_trash(account_id: int, db_path: str) -> int:
@@ -308,16 +311,18 @@ def empty_trash(account_id: int, db_path: str) -> int:
     conn.commit()
     conn.close()
 
-    try:
-        client = _imap_connect(account_id, db_path)
-        if client:
-            client.select_folder(trash["name"], readonly=False)
-            client.add_flags(uids, ["\\Deleted"])
-            client.expunge()
-            client.logout()
-    except Exception as e:
-        log.error("empty_trash account=%d: %s", account_id, e)
+    def _imap_expunge():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(trash["name"], readonly=False)
+                client.add_flags(uids, ["\\Deleted"])
+                client.expunge()
+                client.logout()
+        except Exception as e:
+            log.error("empty_trash account=%d: %s", account_id, e)
 
+    threading.Thread(target=_imap_expunge, daemon=True).start()
     return len(ids)
 
 
@@ -343,28 +348,29 @@ def mark_spam(message_db_id: int, db_path: str) -> bool:
 
     spam_name = spam["name"] if spam else None
     spam_id   = spam["id"]   if spam else None
+
+    if spam_id:
+        conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (spam_id, message_db_id))
+        conn.commit()
     conn.close()
 
     if spam_name:
-        try:
-            client = _imap_connect(account_id, db_path)
-            if client:
-                client.select_folder(src_folder, readonly=False)
-                try:
-                    client.move([uid], spam_name)
-                except Exception:
-                    client.copy([uid], spam_name)
-                    client.add_flags([uid], ["\\Deleted"])
-                    client.expunge()
-                client.logout()
-        except Exception as e:
-            log.error("mark_spam uid=%d: %s", uid, e)
+        def _imap_move():
+            try:
+                client = _imap_connect(account_id, db_path)
+                if client:
+                    client.select_folder(src_folder, readonly=False)
+                    try:
+                        client.move([uid], spam_name)
+                    except Exception:
+                        client.copy([uid], spam_name)
+                        client.add_flags([uid], ["\\Deleted"])
+                        client.expunge()
+                    client.logout()
+            except Exception as e:
+                log.error("mark_spam uid=%d: %s", uid, e)
 
-    if spam_id:
-        conn = get_connection(db_path)
-        conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (spam_id, message_db_id))
-        conn.commit()
-        conn.close()
+        threading.Thread(target=_imap_move, daemon=True).start()
     return True
 
 
@@ -388,26 +394,27 @@ def mark_not_spam(message_db_id: int, db_path: str) -> bool:
         return False
     inbox_id   = inbox["id"]
     inbox_name = inbox["name"]
-    conn.close()
 
-    try:
-        client = _imap_connect(account_id, db_path)
-        if client:
-            client.select_folder(src_folder, readonly=False)
-            try:
-                client.move([uid], inbox_name)
-            except Exception:
-                client.copy([uid], inbox_name)
-                client.add_flags([uid], ["\\Deleted"])
-                client.expunge()
-            client.logout()
-    except Exception as e:
-        log.error("mark_not_spam uid=%d: %s", uid, e)
-
-    conn = get_connection(db_path)
     conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (inbox_id, message_db_id))
     conn.commit()
     conn.close()
+
+    def _imap_move():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(src_folder, readonly=False)
+                try:
+                    client.move([uid], inbox_name)
+                except Exception:
+                    client.copy([uid], inbox_name)
+                    client.add_flags([uid], ["\\Deleted"])
+                    client.expunge()
+                client.logout()
+        except Exception as e:
+            log.error("mark_not_spam uid=%d: %s", uid, e)
+
+    threading.Thread(target=_imap_move, daemon=True).start()
     return True
 
 
@@ -515,16 +522,18 @@ def mark_all_read(message_ids: list, db_path: str) -> int:
     for r in unread:
         by_folder[(r["account_id"], r["folder_name"])].append(r["uid"])
 
-    for (account_id, folder_name), uids in by_folder.items():
-        try:
-            client = _imap_connect(account_id, db_path)
-            if client:
-                client.select_folder(folder_name, readonly=False)
-                client.add_flags(uids, ["\\Seen"])
-                client.logout()
-        except Exception as e:
-            log.error("mark_all_read account=%d folder=%s: %s", account_id, folder_name, e)
+    def _imap_write():
+        for (account_id, folder_name), uids in by_folder.items():
+            try:
+                client = _imap_connect(account_id, db_path)
+                if client:
+                    client.select_folder(folder_name, readonly=False)
+                    client.add_flags(uids, ["\\Seen"])
+                    client.logout()
+            except Exception as e:
+                log.error("mark_all_read account=%d folder=%s: %s", account_id, folder_name, e)
 
+    threading.Thread(target=_imap_write, daemon=True).start()
     return len(unread)
 
 
@@ -540,31 +549,25 @@ def move_message(message_db_id: int, dst_folder_id: int, db_path: str) -> bool:
     uid        = row["uid"]
     src_folder = row["folder_name"]
     dst_folder = dst["name"]
+
+    conn.execute("UPDATE messages SET folder_id=? WHERE id=?", (dst_folder_id, message_db_id))
+    conn.commit()
     conn.close()
 
-    moved = False
-    try:
-        client = _imap_connect(account_id, db_path)
-        if client:
-            client.select_folder(src_folder, readonly=False)
-            try:
-                client.move([uid], dst_folder)
-            except Exception:
-                client.copy([uid], dst_folder)
-                client.add_flags([uid], ["\\Deleted"])
-                client.expunge()
-            client.logout()
-            moved = True
-    except Exception as e:
-        log.error("move uid=%d: %s", uid, e)
+    def _imap_move():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(src_folder, readonly=False)
+                try:
+                    client.move([uid], dst_folder)
+                except Exception:
+                    client.copy([uid], dst_folder)
+                    client.add_flags([uid], ["\\Deleted"])
+                    client.expunge()
+                client.logout()
+        except Exception as e:
+            log.error("move uid=%d: %s", uid, e)
 
-    if moved:
-        conn = get_connection(db_path)
-        conn.execute(
-            "UPDATE messages SET folder_id=? WHERE id=?",
-            (dst_folder_id, message_db_id)
-        )
-        conn.commit()
-        conn.close()
-
-    return moved
+    threading.Thread(target=_imap_move, daemon=True).start()
+    return True

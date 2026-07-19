@@ -5,6 +5,7 @@ Local DB is updated first; IMAP write is best-effort.
 """
 import json
 import logging
+import threading
 
 from core.database import get_connection
 from core.credentials import get_password
@@ -90,7 +91,6 @@ def mark_read(message_db_id: int, db_path: str) -> bool:
             acct_conn.close()
             if acct_row:
                 from core.smtp_send import send_mdn
-                import threading
                 threading.Thread(
                     target=lambda: _send_mdn_and_mark(
                         dict(acct_row), subject, message_id, receipt_to,
@@ -101,16 +101,18 @@ def mark_read(message_db_id: int, db_path: str) -> bool:
         except Exception as e:
             log.error("MDN setup error msg=%d: %s", message_db_id, e)
 
-    try:
-        client = _imap_connect(account_id, db_path)
-        if client:
-            client.select_folder(folder_name, readonly=False)
-            client.add_flags([uid], ["\\Seen"])
-            client.logout()
-            return True
-    except Exception as e:
-        log.error("mark_read uid=%d: %s", uid, e)
-    return False
+    def _imap_write():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(folder_name, readonly=False)
+                client.add_flags([uid], ["\\Seen"])
+                client.logout()
+        except Exception as e:
+            log.error("mark_read uid=%d: %s", uid, e)
+
+    threading.Thread(target=_imap_write, daemon=True).start()
+    return True
 
 
 def _send_mdn_and_mark(account, subject, message_id, receipt_to, msg_db_id, db_path):
@@ -137,16 +139,18 @@ def mark_unread(message_db_id: int, db_path: str) -> bool:
     uid, account_id, folder_name = row["uid"], row["account_id"], row["folder_name"]
     conn.close()
 
-    try:
-        client = _imap_connect(account_id, db_path)
-        if client:
-            client.select_folder(folder_name, readonly=False)
-            client.remove_flags([uid], ["\\Seen"])
-            client.logout()
-            return True
-    except Exception as e:
-        log.error("mark_unread uid=%d: %s", uid, e)
-    return False
+    def _imap_write():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(folder_name, readonly=False)
+                client.remove_flags([uid], ["\\Seen"])
+                client.logout()
+        except Exception as e:
+            log.error("mark_unread uid=%d: %s", uid, e)
+
+    threading.Thread(target=_imap_write, daemon=True).start()
+    return True
 
 
 def trash_message(message_db_id: int, db_path: str) -> bool:
@@ -425,17 +429,20 @@ def toggle_starred(message_db_id: int, db_path: str) -> bool:
     now_starred = not was_starred
     conn.close()
 
-    try:
-        client = _imap_connect(account_id, db_path)
-        if client:
-            client.select_folder(folder_name, readonly=False)
-            if now_starred:
-                client.add_flags([uid], ["\\Flagged"])
-            else:
-                client.remove_flags([uid], ["\\Flagged"])
-            client.logout()
-    except Exception as e:
-        log.error("toggle_starred uid=%d: %s", uid, e)
+    def _imap_write():
+        try:
+            client = _imap_connect(account_id, db_path)
+            if client:
+                client.select_folder(folder_name, readonly=False)
+                if now_starred:
+                    client.add_flags([uid], ["\\Flagged"])
+                else:
+                    client.remove_flags([uid], ["\\Flagged"])
+                client.logout()
+        except Exception as e:
+            log.error("toggle_starred uid=%d: %s", uid, e)
+
+    threading.Thread(target=_imap_write, daemon=True).start()
     return now_starred
 
 

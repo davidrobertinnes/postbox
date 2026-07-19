@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- web/static/js/emails.js: `_emStarredOnly` state flag; `pageEmailsStarred()` sets `folder=all&q=is:starred`; `_emLoad()` builds effective query from `_emSearch` + `_emStarredOnly`; unstarring a message while in Starred view removes it from the list in all three star toggle sites (row cell, detail footer, thread footer); flag reset to false in `pageEmails()` and `pageEmailsFolder()`
+- web/templates/dashboard.html: Starred nav item (★) added to sidebar below All Mail; `navigate()` titles map and dispatch updated for `starred` key
+
 - web/static/js/emails.js: `_emTrash()` refactored — UI removes message immediately; IMAP call deferred 5 s; undo toast with Undo button cancels timer and splices message back at original index; messages already in Trash are permanently expunged immediately (no undo); pending deferred trash committed on folder navigation; `_emUndoToast()` helper added; `_emPendingTrash` module-level state tracks deferred operation
 - web/static/js/emails.js: `_emRestore()` — calls `POST /api/emails/<id>/restore`, removes from Trash list, toasts "Restored to Inbox"
 - web/static/js/emails.js: detail and thread footers show "Restore to Inbox" button when `folder_role === 'trash'`; Delete button relabelled "Delete Forever" in Trash

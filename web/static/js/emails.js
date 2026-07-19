@@ -18,6 +18,7 @@ let _emAccountId       = null;     // null=all accounts, or account id
 let _emSelectedId      = null;     // keyboard-selected message id
 let _emOpenMsg         = null;     // message currently shown in detail panel
 let _emPendingTrash    = null;     // deferred trash: {timer, commit, done}
+let _emStarredOnly     = false;    // true when viewing the Starred virtual folder
 
 const _EM_COLOURS = ['#185FA5','#3B6D11','#8a5a00','#A32D2D','#00695c','#7c3aed'];
 
@@ -131,6 +132,7 @@ async function pageEmails(folder, folderName, accountId = null) {
   _emAccountId      = accountId;
   _emSelectedId     = null;
   _emOpenMsg        = null;
+  _emStarredOnly    = false;
   document.removeEventListener('keydown', _emKeyHandler);
   document.addEventListener('keydown', _emKeyHandler);
   const mc = document.getElementById('module-content');
@@ -147,6 +149,32 @@ async function pageEmails(folder, folderName, accountId = null) {
 }
 
 // Called by sidebar folder list for specific folder by ID
+async function pageEmailsStarred() {
+  if (_emPendingTrash) { _emPendingTrash.commit(); _emPendingTrash = null; }
+  _emStopAutoRefresh();
+  _emFolder         = 'all';
+  _emFolderId       = null;
+  _emFolderName     = 'Starred';
+  _emSearch         = '';
+  _emOffset         = 0;
+  _emPriorityFilter = null;
+  _emCategoryFilter = null;
+  _emAccountId      = null;
+  _emSelectedId     = null;
+  _emOpenMsg        = null;
+  _emStarredOnly    = true;
+  document.removeEventListener('keydown', _emKeyHandler);
+  document.addEventListener('keydown', _emKeyHandler);
+  const mc = document.getElementById('module-content');
+  mc.innerHTML = '<div class="state-loading">Loading...</div>';
+  try {
+    _emAccounts = await apiFetch('/api/accounts');
+    await _emLoad();
+  } catch(e) {
+    mc.innerHTML = `<div class="state-error">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
 async function pageEmailsFolder(folderId, folderDisplayName) {
   if (_emPendingTrash) { _emPendingTrash.commit(); _emPendingTrash = null; }
   _emStopAutoRefresh();
@@ -159,6 +187,7 @@ async function pageEmailsFolder(folderId, folderDisplayName) {
   _emAccountId      = null;
   _emSelectedId     = null;
   _emOpenMsg        = null;
+  _emStarredOnly    = false;
   document.removeEventListener('keydown', _emKeyHandler);
   document.addEventListener('keydown', _emKeyHandler);
   document.getElementById('page-title').textContent = _emFolderName;
@@ -179,7 +208,8 @@ async function _emLoad(append = false) {
   } else {
     params.set('folder', _emFolder);
   }
-  if (_emSearch) params.set('q', _emSearch);
+  const _q = [_emSearch, _emStarredOnly ? 'is:starred' : ''].filter(Boolean).join(' ');
+  if (_q) params.set('q', _q);
   if (_emPriorityFilter) params.set('priority', _emPriorityFilter);
   if (_emCategoryFilter) params.set('category', _emCategoryFilter);
   if (_emAccountId) params.set('account', _emAccountId);
@@ -480,6 +510,11 @@ async function _emToggleStar(msgId, cell) {
       if (!starred) { const i = flags.indexOf('\\Flagged'); if (i > -1) flags.splice(i, 1); }
       msg.flags = JSON.stringify(flags);
     }
+    if (_emStarredOnly && !starred) {
+      _emMessages = _emMessages.filter(m => m.id !== msgId);
+      _emTotal = Math.max(0, _emTotal - 1);
+      _emRender(true);
+    }
   } catch(e) {}
 }
 
@@ -638,6 +673,12 @@ function _emRenderDetail(msg, threadId) {
         if (starCell) starCell.innerHTML = r.data.starred
           ? '<span class="em-star starred" title="Unstar">&#9733;</span>'
           : '<span class="em-star" title="Star">&#9734;</span>';
+        if (_emStarredOnly && !r.data.starred) {
+          detClose();
+          _emMessages = _emMessages.filter(m => m.id !== msg.id);
+          _emTotal = Math.max(0, _emTotal - 1);
+          _emRender(true);
+        }
       }
     } catch(e) {}
   };
@@ -1132,7 +1173,15 @@ function _emRenderThreadFoot(msg, threadId) {
   const isStarred = JSON.parse(msg.flags || '[]').includes('\\Flagged');
   const starBtn = btn(isStarred ? '★ Unstar' : '☆ Star', false, async () => {
     const r = await fetch(`/api/emails/${msg.id}/star`, { method: 'POST' }).then(r => r.json()).catch(() => null);
-    if (r?.ok) starBtn.textContent = r.data.starred ? '★ Unstar' : '☆ Star';
+    if (r?.ok) {
+      starBtn.textContent = r.data.starred ? '★ Unstar' : '☆ Star';
+      if (_emStarredOnly && !r.data.starred) {
+        detClose();
+        _emMessages = _emMessages.filter(m => m.id !== msg.id);
+        _emTotal = Math.max(0, _emTotal - 1);
+        _emRender(true);
+      }
+    }
   });
 
   btn('Mark Unread', false, () => _emMarkUnread(msg.id));

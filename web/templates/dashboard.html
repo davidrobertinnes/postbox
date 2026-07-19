@@ -187,9 +187,12 @@ function _buildSidebar() {
     }
   }
 
-  // All Mail
+  // All Mail + Starred
   html += `<div class="nav-item" data-module="all" onclick="navigate('all')">
     <span class="nav-icon">&#128231;</span>All Mail
+  </div>`;
+  html += `<div class="nav-item" data-module="starred" onclick="navigate('starred')">
+    <span class="nav-icon">&#9733;</span>Starred
   </div>`;
 
   if (multiAccount) {
@@ -281,11 +284,12 @@ function _setNavActive(key) {
 function navigate(key) {
   _currentModule = key;
   _setNavActive(key);
-  const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',junk:'Junk',all:'All Mail',accounts:'Accounts',filters:'Filters'};
+  const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',junk:'Junk',all:'All Mail',starred:'Starred',accounts:'Accounts',filters:'Filters'};
   document.getElementById('page-title').textContent = titles[key] || key;
   detClose();
-  if (key === 'accounts') { pageAccounts(); return; }
-  if (key === 'filters')  { pageFilters();  return; }
+  if (key === 'accounts') { pageAccounts();      return; }
+  if (key === 'filters')  { pageFilters();       return; }
+  if (key === 'starred')  { pageEmailsStarred(); return; }
   pageEmails(key, titles[key]);
 }
 

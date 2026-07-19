@@ -986,3 +986,39 @@ html, body {
 .th-loading     { color: var(--ink3); font-size: 13px; padding: 14px 0; }
 .th-msg.unread .th-from { font-weight: 700; }
 .th-msg.expanded .th-hdr { background: var(--bg, #F4F6FA); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   CONTACTS
+══════════════════════════════════════════════════════════════════════ */
+.cnt-badge          { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }
+.cnt-badge-dbox     { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.cnt-badge-auto     { background: color-mix(in srgb, var(--ink3) 15%, transparent); color: var(--ink3); }
+.req                { color: var(--red); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMPOSE AUTOCOMPLETE
+══════════════════════════════════════════════════════════════════════ */
+.cmp-ac-dropdown {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 10000;
+}
+.cmp-ac-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  outline: none;
+}
+.cmp-ac-item:hover,
+.cmp-ac-item:focus  { background: var(--hover, rgba(0,0,0,.04)); }
+.cmp-ac-name        { font-size: 13px; font-weight: 500; color: var(--ink); }
+.cmp-ac-company     { font-weight: 400; color: var(--ink3); }
+.cmp-ac-email       { font-size: 12px; color: var(--ink3); margin-left: auto; white-space: nowrap; }

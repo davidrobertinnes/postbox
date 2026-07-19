@@ -94,6 +94,22 @@ def initialise_database(db_path: str) -> None:
         cached_at TEXT
     )""")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS contacts (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        name            TEXT NOT NULL,
+        email           TEXT NOT NULL,
+        email_alt       TEXT,
+        phone           TEXT,
+        company         TEXT,
+        dbox_contact_id INTEGER,
+        source          TEXT DEFAULT 'manual',
+        last_emailed    TEXT,
+        notes           TEXT,
+        created_at      TEXT DEFAULT (datetime('now')),
+        UNIQUE(email)
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email)")
+
     c.execute("""CREATE TABLE IF NOT EXISTS rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

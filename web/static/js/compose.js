@@ -3,7 +3,9 @@
 // Prefix: _cmp
 // ═══════════════════════════════════════════════════════════════════════════
 
-let _cmpFiles = [];  // File objects staged for send
+let _cmpFiles    = [];    // File objects staged for send
+let _cmpAcTimer  = null;  // autocomplete debounce
+let _cmpAcActive = null;  // currently visible dropdown element
 
 function composeNew(accountId = null) {
   _cmpOpen({ title: 'New Message', subject: '', to: '', body: '', accountId });
@@ -115,6 +117,10 @@ function _cmpOpen(opts) {
   bd._isNew      = !(opts.body);
   bd._draftId    = opts.draftId    || null;
 
+  _cmpAttachAutocomplete('cmp-to');
+  _cmpAttachAutocomplete('cmp-cc');
+  _cmpAttachAutocomplete('cmp-bcc');
+
   if (!opts.to) {
     document.getElementById('cmp-to')?.focus();
   } else {
@@ -124,8 +130,83 @@ function _cmpOpen(opts) {
 }
 
 function _cmpClose() {
+  _cmpAcDismiss();
   document.getElementById('cmp-modal')?.remove();
   _cmpFiles = [];
+}
+
+// ── Autocomplete ─────────────────────────────────────────────────────────────
+
+function _cmpAttachAutocomplete(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.addEventListener('input', () => {
+    clearTimeout(_cmpAcTimer);
+    _cmpAcTimer = setTimeout(() => _cmpAcFetch(input), 250);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') _cmpAcDismiss();
+    if (e.key === 'ArrowDown' && _cmpAcActive) {
+      e.preventDefault();
+      _cmpAcActive.querySelector('.cmp-ac-item')?.focus();
+    }
+  });
+}
+
+async function _cmpAcFetch(input) {
+  const val       = input.value;
+  const lastComma = val.lastIndexOf(',');
+  const term      = (lastComma >= 0 ? val.slice(lastComma + 1) : val).trim();
+  if (term.length < 2) { _cmpAcDismiss(); return; }
+  try {
+    const results = await apiFetch(`/api/contacts/autocomplete?q=${encodeURIComponent(term)}`);
+    if (!results.length) { _cmpAcDismiss(); return; }
+    _cmpAcShow(input, results);
+  } catch(e) { _cmpAcDismiss(); }
+}
+
+function _cmpAcShow(input, results) {
+  _cmpAcDismiss();
+  const rect = input.getBoundingClientRect();
+  const dd   = document.createElement('div');
+  dd.className = 'cmp-ac-dropdown';
+  dd.style.cssText = `left:${rect.left}px;top:${rect.bottom + 2}px;width:${Math.max(rect.width, 320)}px`;
+  dd.innerHTML = results.map((c, i) =>
+    `<div class="cmp-ac-item" tabindex="-1" data-idx="${i}">
+      <span class="cmp-ac-name">${esc(c.name)}${c.company ? `<span class="cmp-ac-company"> · ${esc(c.company)}</span>` : ''}</span>
+      <span class="cmp-ac-email">${esc(c.email)}</span>
+    </div>`
+  ).join('');
+  document.body.appendChild(dd);
+  _cmpAcActive = dd;
+
+  dd.querySelectorAll('.cmp-ac-item').forEach((item, i) => {
+    item.addEventListener('mousedown', e => {
+      e.preventDefault();
+      _cmpAcInsert(input, results[i]);
+    });
+    item.addEventListener('keydown', e => {
+      if (e.key === 'Enter')     { e.preventDefault(); _cmpAcInsert(input, results[i]); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); (item.nextElementSibling || item).focus(); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); (item.previousElementSibling || input).focus(); }
+      if (e.key === 'Escape')    _cmpAcDismiss();
+    });
+  });
+
+  setTimeout(() => document.addEventListener('click', _cmpAcDismiss, { once: true }), 0);
+}
+
+function _cmpAcInsert(input, contact) {
+  const insert    = contact.name ? `${contact.name} <${contact.email}>` : contact.email;
+  const val       = input.value;
+  const lastComma = val.lastIndexOf(',');
+  input.value = lastComma >= 0 ? val.slice(0, lastComma + 1) + ' ' + insert : insert;
+  _cmpAcDismiss();
+  input.focus();
+}
+
+function _cmpAcDismiss() {
+  if (_cmpAcActive) { _cmpAcActive.remove(); _cmpAcActive = null; }
 }
 
 function _cmpToggleBcc() {

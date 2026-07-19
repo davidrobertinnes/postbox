@@ -11,15 +11,18 @@
 
 - **Undo trash** — `_emTrash()` now defers the IMAP call by 5 s; UI removes the message immediately; a toast with an Undo button appears; clicking Undo cancels the timer, splices the message back into `_emMessages` at its original index, and re-selects it; messages already in Trash are permanently deleted immediately (no undo); pending deferred trash is committed synchronously on folder navigation (`pageEmails`, `pageEmailsFolder`); `_emUndoToast()` helper added; `.toast-undo` / `.toast-undo-btn` CSS added to `postbox.css`; call sites cleaned up (no longer pass `btn` arg)
 
+### Session 2026-07-19 (3) — contacts module
+
+- **Contacts module** — address book with CRUD, search, source badges (manual/dbox/auto); contacts table with dbox_contact_id for future integration; Import from Dogbox pulls from dbox GET /api/ext/contacts (unauthenticated ext endpoint added to dbox); autocomplete in compose To/CC/BCC fields with dropdown, arrow key nav, multi-recipient support
+- **dbox change** — GET /api/ext/contacts added to dbox web/routes/contacts.py (no auth, localhost trust, active contacts with email only)
+
 ### Session 2026-07-19 (2) — starred folder
 
 - **Starred folder** — sidebar ★ Starred item below All Mail; `pageEmailsStarred()` loads all accounts/folders filtered to `is:starred`; unstarring removes message from list immediately; `_emStarredOnly` flag gates query and removal logic in row, detail footer, and thread footer star toggles
 
 ### Next items (priority order)
 
-1. **Contact autocomplete** — To/CC/BCC fields suggest from contacts module (contacts module needed first)
-2. **Contact autocomplete** — To/CC/BCC fields suggest from a contacts module (contacts module needed first)
-3. **Print email** — clean print view button in detail footer
+1. **Print email** — clean print view button in detail footer
 4. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
 5. **Packaging** — release bundle / installer for Dogbox Mailman
 6. **Google verification** — remove 7-day OAuth token limit and 100-user cap

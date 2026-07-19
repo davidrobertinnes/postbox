@@ -242,7 +242,8 @@ async function _emLoadAll() {
   try {
     const params = new URLSearchParams({ limit: _emTotal, offset: 0 });
     if (_emFolderId) { params.set('folder_id', _emFolderId); } else { params.set('folder', _emFolder); }
-    if (_emSearch) params.set('q', _emSearch);
+    const _qAll = [_emSearch, _emStarredOnly ? 'is:starred' : ''].filter(Boolean).join(' ');
+    if (_qAll) params.set('q', _qAll);
     const data = await apiFetch('/api/emails?' + params);
     _emMessages = data.messages || [];
     _emTotal    = data.total || 0;

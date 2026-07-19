@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- core/database.py: contacts table — id, name, email, email_alt, phone, company, dbox_contact_id, source, last_emailed, notes, created_at; UNIQUE(email); idx_contacts_email index
+- web/routes/contacts.py: CRUD routes (GET/POST /api/contacts, GET/PUT/DELETE /api/contacts/<id>); GET /api/contacts/autocomplete?q= (min 2 chars, limit 10, matches name/email/company); POST /api/contacts/import_dbox — calls dbox GET /api/ext/contacts, upserts with ON CONFLICT, maps contact_person→name and name→company for business contacts
+- web/server.py: contacts blueprint registered
+- web/static/js/contacts.js: pageContacts() — list with search, Add Contact button, Import from Dogbox button; det-panel add/edit form (name, email, email_alt, phone, company, notes); delete with confirm(); source badges (dbox/auto); _cntImportDbox() calls import route and reloads
+- web/static/js/compose.js: _cmpAttachAutocomplete(inputId) — debounced input handler (250ms) fetches /api/contacts/autocomplete; _cmpAcShow() positions fixed dropdown below input; arrow key navigation, Enter to select, Escape to dismiss, mousedown to prevent blur; _cmpAcInsert() appends after last comma for multiple recipients; autocomplete wired to To/CC/BCC on modal open; _cmpClose() dismisses dropdown
+- web/static/js/emails.js: _emLoadAll() fixed to respect _emStarredOnly (was missing is:starred from load-all query)
+- web/static/postbox.css: .cnt-badge, .cnt-badge-dbox, .cnt-badge-auto, .req; .cmp-ac-dropdown, .cmp-ac-item, .cmp-ac-name, .cmp-ac-company, .cmp-ac-email
+- web/templates/dashboard.html: Contacts nav item (👤) in Manage section; contacts.js script tag; navigate() dispatch for contacts key
+
 - web/static/js/emails.js: `_emStarredOnly` state flag; `pageEmailsStarred()` sets `folder=all&q=is:starred`; `_emLoad()` builds effective query from `_emSearch` + `_emStarredOnly`; unstarring a message while in Starred view removes it from the list in all three star toggle sites (row cell, detail footer, thread footer); flag reset to false in `pageEmails()` and `pageEmailsFolder()`
 - web/templates/dashboard.html: Starred nav item (★) added to sidebar below All Mail; `navigate()` titles map and dispatch updated for `starred` key
 

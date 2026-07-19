@@ -26,7 +26,7 @@ def api_rules_list():
         JOIN accounts a ON a.id = r.account_id
         LEFT JOIN folders f ON f.id = r.action_folder_id
         {where}
-        ORDER BY r.account_id, r.id
+        ORDER BY r.priority DESC, r.id
     """, params).fetchall())
     conn.close()
     return ok(rows)
@@ -43,9 +43,9 @@ def api_rules_create():
     conn = get_connection(db())
     cur = conn.execute("""
         INSERT INTO rules (account_id, name, condition_field, condition_op,
-                           condition_value, action, action_folder_id, active)
+                           condition_value, action, action_folder_id, active, priority)
         VALUES (:account_id, :name, :condition_field, :condition_op,
-                :condition_value, :action, :action_folder_id, 1)
+                :condition_value, :action, :action_folder_id, :active, :priority)
     """, {
         "account_id":       int(data["account_id"]),
         "name":             data["name"],
@@ -54,6 +54,8 @@ def api_rules_create():
         "condition_value":  data["condition_value"],
         "action":           data["action"],
         "action_folder_id": data.get("action_folder_id") or None,
+        "active":           1 if data.get("active", True) else 0,
+        "priority":         int(data.get("priority") or 0),
     })
     conn.commit()
     conn.close()
@@ -65,7 +67,7 @@ def api_rules_update(rid: int):
     data = request.get_json() or {}
     conn = get_connection(db())
     fields = ["name", "condition_field", "condition_op", "condition_value",
-              "action", "action_folder_id", "active"]
+              "action", "action_folder_id", "active", "priority"]
     updates = {k: data[k] for k in fields if k in data}
     if updates:
         set_clause = ", ".join(f"{k}=:{k}" for k in updates)
@@ -83,6 +85,31 @@ def api_rules_delete(rid: int):
     conn.commit()
     conn.close()
     return ok()
+
+
+@bp.route("/api/rules/run", methods=["POST"])
+def api_rules_run():
+    """Apply active rules to all inbox messages for an account (or all accounts)."""
+    data = request.get_json() or {}
+    account_id = data.get("account_id")
+    conn = get_connection(db())
+    if account_id:
+        rows = conn.execute("""
+            SELECT m.id FROM messages m
+            JOIN folders f ON f.id = m.folder_id
+            WHERE m.account_id=? AND f.role='inbox'
+        """, (int(account_id),)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT m.id FROM messages m
+            JOIN folders f ON f.id = m.folder_id
+            WHERE f.role='inbox'
+        """).fetchall()
+    conn.close()
+
+    from core.rules import apply_rules_to_message
+    matched = sum(1 for r in rows if apply_rules_to_message(r["id"], db()))
+    return ok({"processed": len(rows), "matched": matched})
 
 
 # ── Sender Lists ───────────────────────────────────────────────────────────────
@@ -111,10 +138,14 @@ def api_sender_lists():
 def api_sender_lists_add():
     data = request.get_json() or {}
     account_id = data.get("account_id")
-    email      = (data.get("email") or "").strip().lower()
+    raw        = (data.get("email") or "").strip()
     list_type  = data.get("list_type")
-    if not account_id or not email or list_type not in ("whitelist", "blacklist"):
+    if not account_id or not raw or list_type not in ("whitelist", "blacklist"):
         return err("account_id, email, and list_type (whitelist|blacklist) required")
+    # Normalise domain entries: "example.com" → "@example.com"
+    if '@' not in raw:
+        raw = '@' + raw
+    email = raw.lower()
     conn = get_connection(db())
     try:
         cur = conn.execute(

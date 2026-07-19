@@ -162,6 +162,10 @@ def initialise_database(db_path: str) -> None:
         c.execute("ALTER TABLE messages ADD COLUMN trashed_at TEXT")
     except Exception:
         pass
+    try:
+        c.execute("ALTER TABLE rules ADD COLUMN priority INTEGER DEFAULT 0")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()

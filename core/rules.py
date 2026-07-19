@@ -10,7 +10,16 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def apply_rules_to_message(message_id: int, db_path: str) -> None:
+def _sender_matches(pattern: str, from_addr: str) -> bool:
+    """Match from_addr against an exact email or @domain.com pattern."""
+    pattern = pattern.lower().strip()
+    if pattern.startswith('@'):
+        return from_addr.endswith(pattern)
+    return from_addr == pattern
+
+
+def apply_rules_to_message(message_id: int, db_path: str) -> bool:
+    """Apply rules to a message. Returns True if any rule or list entry fired."""
     from core.database import get_connection
     conn = get_connection(db_path)
     row = conn.execute("""
@@ -20,42 +29,50 @@ def apply_rules_to_message(message_id: int, db_path: str) -> None:
     """, (message_id,)).fetchone()
     if not row:
         conn.close()
-        return
+        return False
     msg = dict(row)
     account_id = msg["account_id"]
     from_addr  = (msg.get("from_addr") or "").lower()
 
-    # Whitelist — skip all rules for this sender
-    if from_addr and conn.execute("""
-        SELECT 1 FROM sender_lists
-        WHERE account_id=? AND list_type='whitelist' AND LOWER(email)=?
-    """, (account_id, from_addr)).fetchone():
-        conn.close()
-        return
+    # Whitelist — skip all rules for this sender/domain
+    if from_addr:
+        wl = conn.execute(
+            "SELECT email FROM sender_lists WHERE account_id=? AND list_type='whitelist'",
+            (account_id,)
+        ).fetchall()
+        if any(_sender_matches(r["email"], from_addr) for r in wl):
+            conn.close()
+            return False
 
     # Blacklist — auto-spam
-    if from_addr and conn.execute("""
-        SELECT 1 FROM sender_lists
-        WHERE account_id=? AND list_type='blacklist' AND LOWER(email)=?
-    """, (account_id, from_addr)).fetchone():
-        conn.close()
-        _do_action("spam", account_id, message_id, None, db_path)
-        return
+    if from_addr:
+        bl = conn.execute(
+            "SELECT email FROM sender_lists WHERE account_id=? AND list_type='blacklist'",
+            (account_id,)
+        ).fetchall()
+        if any(_sender_matches(r["email"], from_addr) for r in bl):
+            conn.close()
+            _do_action("spam", account_id, message_id, None, db_path)
+            return True
 
     rules = [dict(r) for r in conn.execute(
-        "SELECT * FROM rules WHERE account_id=? AND active=1 ORDER BY id",
+        "SELECT * FROM rules WHERE account_id=? AND active=1 ORDER BY priority DESC, id",
         (account_id,)
     ).fetchall()]
     conn.close()
 
+    fired = False
     for rule in rules:
         if _matches(rule, msg):
+            fired = True
             terminal = _do_action(
                 rule["action"], account_id, message_id,
                 rule.get("action_folder_id"), db_path
             )
             if terminal:
                 break
+
+    return fired
 
 
 def _matches(rule: dict, msg: dict) -> bool:

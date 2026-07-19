@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- core/database.py: migration adds `priority INTEGER DEFAULT 0` column to rules table
+- core/rules.py: `_sender_matches()` helper supports `@domain.com` patterns for whitelist/blacklist; `apply_rules_to_message()` returns bool (True if any rule/list entry fired); ORDER BY priority DESC, id
+- web/routes/rules.py: `priority` field in CREATE/UPDATE; ORDER BY priority DESC; `POST /api/rules/run` applies active rules to inbox messages and returns `{processed, matched}` counts; sender_lists normalises bare domain entries to `@domain.com` on insert
+- web/static/js/rules.js: click-to-select row pattern with Edit/Delete in section toolbar; active badge clickable inline to toggle without opening form; Run Now button with result toast; priority + active fields in add/edit form; domain hint in whitelist/blacklist modal; `_rlCreateRuleFromEmail()` updated with priority/active defaults
+- web/static/postbox.css: `rl-toolbar`, `rl-hint`, `rl-empty`, `rl-cell-sm`, `rl-rule-row` hover/selected, `rl-badge-active`/`rl-badge-inactive` styles
+- web/static/js/rules.js, emails.js: `_rlCreateRuleFromEmail()` — "Create Rule" button in single-message and thread view footers; pre-fills rule form with sender email, account, and auto-generated name
+
 - core/imap_actions.py: all user-triggered IMAP write-back operations (`toggle_starred`, `mark_read`, `mark_unread`, `trash_message`, `bulk_move_messages`, `empty_trash`, `mark_spam`, `mark_not_spam`, `mark_all_read`, `move_message`) now update the local DB first and fire the IMAP write in a background daemon thread — eliminates per-action IMAP round-trip delay; `threading` import hoisted to module level
 - web/static/js/rules.js: `_rlCreateRuleFromEmail(accountId, fromAddr, fromName, subject)` — opens rule det-panel pre-filled with sender email, auto-generated name, and account; loads accounts on demand if Filters page not yet visited
 - web/static/js/emails.js: "Create Rule" button added to single-message detail footer and thread view footer; pre-fills rule form from message sender

@@ -7,6 +7,10 @@
 - **Keyboard shortcuts** — full vim-style navigation: j/↓ next, k/↑ prev, Enter open, r reply, a reply-all, f forward, e trash, u mark-unread, n compose, / focus search, Esc close panel; j/k auto-advance through messages when panel is already open; suppressed when typing in inputs or a modal is open; listener registered on page enter, removed on re-entry to prevent duplicates; selected row gets accent outline via `.em-selected`
 - **Tab unread badge** — `document.title` prefixed with `(N)` when inbox has unread messages; updates on inbox load, mark-all-read, and after opening a message; strips any existing prefix before applying new count
 
+### Session 2026-07-20 — rules UI overhaul
+
+- **Rules UI overhaul** — click-to-select row pattern with Edit/Delete in toolbar; active badge clickable inline to toggle; priority column + field in form; active checkbox in form; "Run Now" button applies rules to existing inbox messages and toasts result count; `@domain.com` matching in whitelist/blacklist (engine + add modal); sender_lists normalises bare domain entries on insert; DB migration adds priority column
+
 ### Session 2026-07-19 (4) — async IMAP write-back, Create Rule from email
 
 - **Async IMAP write-back** — all user-triggered IMAP flag/move operations now return immediately after the DB commit; IMAP write fires in a background thread (best-effort); affects: `toggle_starred`, `mark_read`, `mark_unread`, `trash_message`, `bulk_move_messages`, `empty_trash`, `mark_spam`, `mark_not_spam`, `mark_all_read`, `move_message`; `threading` import hoisted to module level; `purge_old_trash` intentionally left synchronous (background maintenance job)
@@ -27,7 +31,7 @@
 
 ### Next items (priority order)
 
-1. **Rules UI overhaul** — bring Filters page up to bank rec standard: priority field + ordered execution (currently `ORDER BY id`); active/inactive toggle visible in list; click-to-select row pattern (edit/delete appear on selection); "Run Rules Now" button to apply rules against existing inbox messages (currently new arrivals only); domain-level matching in whitelist/blacklist (`@domain.com`); active toggle missing from add/edit form
+1. **Rules UI overhaul** — ✓ done 2026-07-20
 2. **Print email** — clean print view button in detail footer
 3. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
 4. **Packaging** — release bundle / installer for Dogbox Mailman

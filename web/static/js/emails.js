@@ -719,6 +719,12 @@ function _emRenderDetail(msg, threadId) {
     foot.appendChild(spamBtn);
   }
 
+  const ruleBtn = document.createElement('button');
+  ruleBtn.className = 'btn btn-outline btn-sm';
+  ruleBtn.textContent = 'Create Rule';
+  ruleBtn.onclick = () => _rlCreateRuleFromEmail(msg.account_id, msg.from_addr, msg.from_name, msg.subject);
+  foot.appendChild(ruleBtn);
+
   const delBtn = document.createElement('button');
   delBtn.className = 'btn btn-outline btn-sm btn-danger';
   delBtn.textContent = msg.folder_role === 'trash' ? 'Delete Forever' : 'Delete';
@@ -1202,6 +1208,8 @@ function _emRenderThreadFoot(msg, threadId) {
       else toast(r.error || 'Failed', 'err');
     });
   }
+
+  btn('Create Rule', false, () => _rlCreateRuleFromEmail(msg.account_id, msg.from_addr, msg.from_name, msg.subject));
 
   const delBtn = btn(msg.folder_role === 'trash' ? 'Delete Forever' : 'Delete', false, () => _emTrash(msg.id));
   delBtn.classList.add('btn-danger');

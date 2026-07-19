@@ -101,6 +101,23 @@ function _rlAddRule() {
   _rlOpenRuleForm(null);
 }
 
+async function _rlCreateRuleFromEmail(accountId, fromAddr, fromName, subject) {
+  if (!_rlAccounts.length) {
+    try { _rlAccounts = await apiFetch('/api/accounts'); } catch(e) {}
+  }
+  const name = fromAddr ? `From: ${fromAddr}` : (subject ? `Subject: ${subject}` : 'New rule');
+  await _rlOpenRuleForm({
+    id: null,
+    account_id: accountId,
+    name,
+    condition_field: 'from',
+    condition_op: 'contains',
+    condition_value: fromAddr || '',
+    action: 'mark_read',
+    action_folder_id: null,
+  });
+}
+
 function _rlEditRule(id) {
   _rlOpenRuleForm(_rlRules.find(r => r.id === id));
 }

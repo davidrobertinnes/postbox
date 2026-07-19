@@ -7,6 +7,11 @@
 - **Keyboard shortcuts** — full vim-style navigation: j/↓ next, k/↑ prev, Enter open, r reply, a reply-all, f forward, e trash, u mark-unread, n compose, / focus search, Esc close panel; j/k auto-advance through messages when panel is already open; suppressed when typing in inputs or a modal is open; listener registered on page enter, removed on re-entry to prevent duplicates; selected row gets accent outline via `.em-selected`
 - **Tab unread badge** — `document.title` prefixed with `(N)` when inbox has unread messages; updates on inbox load, mark-all-read, and after opening a message; strips any existing prefix before applying new count
 
+### Session 2026-07-19 (4) — async IMAP write-back, Create Rule from email
+
+- **Async IMAP write-back** — all user-triggered IMAP flag/move operations now return immediately after the DB commit; IMAP write fires in a background thread (best-effort); affects: `toggle_starred`, `mark_read`, `mark_unread`, `trash_message`, `bulk_move_messages`, `empty_trash`, `mark_spam`, `mark_not_spam`, `mark_all_read`, `move_message`; `threading` import hoisted to module level; `purge_old_trash` intentionally left synchronous (background maintenance job)
+- **Create Rule from email** — "Create Rule" button added to both single-message and thread view footers; opens rule det-panel pre-filled with sender email, account, and auto-generated name (`From: sender@example.com`); `_rlCreateRuleFromEmail()` helper in `rules.js` loads accounts on demand so it works without visiting the Filters page first
+
 ### Session 2026-07-19 — undo trash
 
 - **Undo trash** — `_emTrash()` now defers the IMAP call by 5 s; UI removes the message immediately; a toast with an Undo button appears; clicking Undo cancels the timer, splices the message back into `_emMessages` at its original index, and re-selects it; messages already in Trash are permanently deleted immediately (no undo); pending deferred trash is committed synchronously on folder navigation (`pageEmails`, `pageEmailsFolder`); `_emUndoToast()` helper added; `.toast-undo` / `.toast-undo-btn` CSS added to `postbox.css`; call sites cleaned up (no longer pass `btn` arg)
@@ -22,11 +27,12 @@
 
 ### Next items (priority order)
 
-1. **Print email** — clean print view button in detail footer
-4. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
-5. **Packaging** — release bundle / installer for Dogbox Mailman
-6. **Google verification** — remove 7-day OAuth token limit and 100-user cap
-7. **Microsoft OAuth testing** — get Azure app registered and test end-to-end
+1. **Rules UI overhaul** — bring Filters page up to bank rec standard: priority field + ordered execution (currently `ORDER BY id`); active/inactive toggle visible in list; click-to-select row pattern (edit/delete appear on selection); "Run Rules Now" button to apply rules against existing inbox messages (currently new arrivals only); domain-level matching in whitelist/blacklist (`@domain.com`); active toggle missing from add/edit form
+2. **Print email** — clean print view button in detail footer
+3. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
+4. **Packaging** — release bundle / installer for Dogbox Mailman
+5. **Google verification** — remove 7-day OAuth token limit and 100-user cap
+6. **Microsoft OAuth testing** — get Azure app registered and test end-to-end
 
 ---
 

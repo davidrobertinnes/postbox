@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- core/imap_actions.py: all user-triggered IMAP write-back operations (`toggle_starred`, `mark_read`, `mark_unread`, `trash_message`, `bulk_move_messages`, `empty_trash`, `mark_spam`, `mark_not_spam`, `mark_all_read`, `move_message`) now update the local DB first and fire the IMAP write in a background daemon thread — eliminates per-action IMAP round-trip delay; `threading` import hoisted to module level
+- web/static/js/rules.js: `_rlCreateRuleFromEmail(accountId, fromAddr, fromName, subject)` — opens rule det-panel pre-filled with sender email, auto-generated name, and account; loads accounts on demand if Filters page not yet visited
+- web/static/js/emails.js: "Create Rule" button added to single-message detail footer and thread view footer; pre-fills rule form from message sender
+
 - core/database.py: contacts table — id, name, email, email_alt, phone, company, dbox_contact_id, source, last_emailed, notes, created_at; UNIQUE(email); idx_contacts_email index
 - web/routes/contacts.py: CRUD routes (GET/POST /api/contacts, GET/PUT/DELETE /api/contacts/<id>); GET /api/contacts/autocomplete?q= (min 2 chars, limit 10, matches name/email/company); POST /api/contacts/import_dbox — calls dbox GET /api/ext/contacts, upserts with ON CONFLICT, maps contact_person→name and name→company for business contacts
 - web/server.py: contacts blueprint registered

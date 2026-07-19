@@ -29,14 +29,21 @@
 
 - **Starred folder** — sidebar ★ Starred item below All Mail; `pageEmailsStarred()` loads all accounts/folders filtered to `is:starred`; unstarring removes message from list immediately; `_emStarredOnly` flag gates query and removal logic in row, detail footer, and thread footer star toggles
 
+### Session 2026-07-20 (2) — dbox integration: contact email history
+
+No postbox code changed this session. Work was entirely on the dbox side:
+- **dbox: contact Emails tab** — `GET /api/contacts/<id>/emails` route added to dbox; calls Mailman `localhost:5200/api/ext/emails?contact=<email>` (stdlib urllib, 2-second timeout); returns `{emails, offline}`. "Emails" tab added to contact det-panel in dbox (only shown when contact has an email); renders subject, date, sender name, Mailman account badge, snippet; graceful "Mailman not running" offline state. (`dbox/web/routes/contacts.py`, `dbox/web/static/js/contacts.js`, `dbox/web/static/dbox.css`)
+- Mailman's `GET /api/ext/emails` and `GET /api/ext/unread_count` endpoints (added in Session 2026-07-19) are now being consumed by dbox.
+
 ### Next items (priority order)
 
 1. **Rules UI overhaul** — ✓ done 2026-07-20
-2. **Print email** — clean print view button in detail footer
-3. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
-4. **Packaging** — release bundle / installer for Dogbox Mailman
-5. **Google verification** — remove 7-day OAuth token limit and 100-user cap
-6. **Microsoft OAuth testing** — get Azure app registered and test end-to-end
+2. **dbox unread badge** — dbox dashboard/nav to show Mailman unread count using `GET /api/ext/unread_count` (endpoint ready, dbox side not yet wired)
+3. **Print email** — clean print view button in detail footer
+4. **True offline mode** — service worker or local Flask cache so the app remains readable/composable when the machine has no internet; current body prefetch is server-dependent; compose queue needed for outbox-while-offline
+5. **Packaging** — release bundle / installer for Dogbox Mailman
+6. **Google verification** — remove 7-day OAuth token limit and 100-user cap
+7. **Microsoft OAuth testing** — get Azure app registered and test end-to-end
 
 ---
 

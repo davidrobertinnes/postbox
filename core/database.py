@@ -137,6 +137,51 @@ def initialise_database(db_path: str) -> None:
     c.execute("CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_folders_role ON folders(role)")
 
+    # FTS5 full-text search
+    try:
+        c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+            subject, from_addr, from_name, body,
+            tokenize='unicode61 remove_diacritics 1'
+        )""")
+        c.execute("""CREATE TRIGGER IF NOT EXISTS messages_fts_ai
+            AFTER INSERT ON messages BEGIN
+                INSERT INTO messages_fts(rowid, subject, from_addr, from_name, body)
+                VALUES (NEW.id, COALESCE(NEW.subject,''), COALESCE(NEW.from_addr,''),
+                        COALESCE(NEW.from_name,''), COALESCE(NEW.snippet,''));
+            END""")
+        c.execute("""CREATE TRIGGER IF NOT EXISTS messages_fts_ad
+            AFTER DELETE ON messages BEGIN
+                DELETE FROM messages_fts WHERE rowid = OLD.id;
+            END""")
+        c.execute("""CREATE TRIGGER IF NOT EXISTS message_bodies_fts_ai
+            AFTER INSERT ON message_bodies BEGIN
+                DELETE FROM messages_fts WHERE rowid = NEW.message_id;
+                INSERT INTO messages_fts(rowid, subject, from_addr, from_name, body)
+                SELECT m.id, COALESCE(m.subject,''), COALESCE(m.from_addr,''),
+                       COALESCE(m.from_name,''), COALESCE(NEW.body_text,'')
+                FROM messages m WHERE m.id = NEW.message_id;
+            END""")
+        c.execute("""CREATE TRIGGER IF NOT EXISTS message_bodies_fts_au
+            AFTER UPDATE ON message_bodies BEGIN
+                DELETE FROM messages_fts WHERE rowid = NEW.message_id;
+                INSERT INTO messages_fts(rowid, subject, from_addr, from_name, body)
+                SELECT m.id, COALESCE(m.subject,''), COALESCE(m.from_addr,''),
+                       COALESCE(m.from_name,''), COALESCE(NEW.body_text,'')
+                FROM messages m WHERE m.id = NEW.message_id;
+            END""")
+        # Backfill existing messages on first run (skipped if FTS already populated)
+        fts_count = c.execute("SELECT COUNT(*) FROM messages_fts").fetchone()[0]
+        if fts_count == 0:
+            c.execute("""
+                INSERT INTO messages_fts(rowid, subject, from_addr, from_name, body)
+                SELECT m.id, COALESCE(m.subject,''), COALESCE(m.from_addr,''),
+                       COALESCE(m.from_name,''), COALESCE(mb.body_text, m.snippet,'')
+                FROM messages m
+                LEFT JOIN message_bodies mb ON mb.message_id = m.id
+            """)
+    except Exception:
+        pass  # FTS5 unavailable — search falls back to LIKE
+
     # Migrations — add columns to existing tables if not present
     try:
         c.execute("ALTER TABLE accounts ADD COLUMN needs_reauth INTEGER DEFAULT 0")

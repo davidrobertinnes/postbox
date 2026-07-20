@@ -13,6 +13,15 @@ bp = Blueprint("emails", __name__)
 _prefetch_state = {}  # {key: {"total": N, "done": M, "running": bool}}
 
 
+def _fts_query(text: str):
+    """Build an FTS5 MATCH expression from freetext with prefix matching per word."""
+    import re
+    words = re.findall(r'\w+', text)
+    if not words:
+        return None
+    return ' '.join(w + '*' for w in words)
+
+
 def _parse_search_operators(q: str):
     """Split 'from:alice subject:invoice has:attachment is:unread is:starred freetext'
     into structured filters and remaining freetext."""
@@ -99,8 +108,13 @@ def api_emails():
             where.append("m.flags LIKE '%Flagged%'")
         if sf["freetext"]:
             ft = sf["freetext"]
-            where.append("(m.subject LIKE ? OR m.from_addr LIKE ? OR m.from_name LIKE ? OR m.snippet LIKE ?)")
-            params.extend([f"%{ft}%"] * 4)
+            fts_q = _fts_query(ft)
+            if fts_q:
+                where.append("m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")
+                params.append(fts_q)
+            else:
+                where.append("(m.subject LIKE ? OR m.from_addr LIKE ? OR m.from_name LIKE ? OR m.snippet LIKE ?)")
+                params.extend([f"%{ft}%"] * 4)
 
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
     params.extend([limit, offset])

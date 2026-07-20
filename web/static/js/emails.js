@@ -651,6 +651,12 @@ function _emRenderDetail(msg, threadId) {
   fwdBtn.onclick = () => composeForward(msg);
   foot.appendChild(fwdBtn);
 
+  const printBtn = document.createElement('button');
+  printBtn.className = 'btn btn-outline btn-sm';
+  printBtn.textContent = 'Print';
+  printBtn.onclick = () => _emPrint(msg);
+  foot.appendChild(printBtn);
+
   const moveBtn = document.createElement('button');
   moveBtn.className = 'btn btn-outline btn-sm';
   moveBtn.textContent = 'Move to…';
@@ -1175,6 +1181,7 @@ function _emRenderThreadFoot(msg, threadId) {
   btn('Reply All',    false, () => composeReplyAll(msg));
   btn('Draft with AI',false, () => _emAiDraft(msg, threadId));
   btn('Forward',      false, () => composeForward(msg));
+  btn('Print',        false, () => _emPrint(msg));
   btn('Move to…',false, () => _emMoveModal(msg));
 
   const isStarred = JSON.parse(msg.flags || '[]').includes('\\Flagged');
@@ -1213,6 +1220,41 @@ function _emRenderThreadFoot(msg, threadId) {
 
   const delBtn = btn(msg.folder_role === 'trash' ? 'Delete Forever' : 'Delete', false, () => _emTrash(msg.id));
   delBtn.classList.add('btn-danger');
+}
+
+function _emPrint(msg) {
+  const fromStr = esc(msg.from_name ? `${msg.from_name} <${msg.from_addr}>` : (msg.from_addr || ''));
+  const toStr   = esc(_emParseAddrs(msg.to_addrs).map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', '));
+  const ccStr   = esc(_emParseAddrs(msg.cc_addrs).map(a => a.name ? `${a.name} <${a.addr}>` : a.addr).join(', '));
+  const subject = esc(msg.subject || '(no subject)');
+  const body    = msg.body_html && msg.body_html.trim()
+    ? msg.body_html
+    : `<pre style="white-space:pre-wrap;font-family:sans-serif">${esc(msg.body_text || '(empty)')}</pre>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${subject}</title>
+<style>
+body{font-family:sans-serif;font-size:13px;color:#000;margin:24px}
+.hdr{border-bottom:1px solid #ccc;padding-bottom:12px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 8px}
+.row{margin:3px 0}.lbl{font-weight:bold;display:inline-block;min-width:48px}
+@media print{body{margin:0}}
+</style></head><body>
+<div class="hdr">
+  <h2>${subject}</h2>
+  <div class="row"><span class="lbl">From:</span> ${fromStr}</div>
+  <div class="row"><span class="lbl">To:</span> ${toStr}</div>
+  ${ccStr ? `<div class="row"><span class="lbl">CC:</span> ${ccStr}</div>` : ''}
+  <div class="row"><span class="lbl">Date:</span> ${esc(_emFmtDetailDate(msg.date))}</div>
+</div>
+${body}
+</body></html>`);
+  w.document.close();
+  let done = false;
+  const go = () => { if (!done) { done = true; w.print(); } };
+  w.addEventListener('load', go);
+  setTimeout(go, 600);
 }
 
 async function _emToggleThreadMsg(msgId) {

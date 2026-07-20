@@ -1,8 +1,13 @@
 # Chrome profile (Chromium app-mode data — local only)
 .postbox-chrome-profile/
 
-# Database
+# Database / mailbox files
 postbox.db
+*.pbox
+
+# Logs
+server.log
+server.err
 
 # Python
 __pycache__/

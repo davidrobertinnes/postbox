@@ -1,5 +1,22 @@
 # Dogbox Mailman — Session Notes
 
+## Current state (2026-07-20)
+
+### Session 2026-07-20 (4) — print view, FTS5 search, packaging
+
+- **Print view** — "Print" button added to single-message and thread footers; `_emPrint(msg)` opens a clean standalone window (From/To/CC/Date/Subject header + full body) and fires `window.print()` automatically; dual-trigger guard (load event + 600ms timeout) handles both HTML and plain-text emails (`web/static/js/emails.js`)
+- **FTS5 full-text search** — `messages_fts` virtual table (subject, from_addr, from_name, body) with `unicode61` tokeniser; triggers keep it in sync on message insert/delete and body fetch; backfill migration populated 7,799 existing messages; freetext search replaced from LIKE scan to FTS5 MATCH with prefix matching (`word*`) in `web/routes/emails.py`; `_fts_query()` helper added (`core/database.py`, `web/routes/emails.py`)
+- **Packaging** — `wininstall.bat` and `macinstall.sh` created (Python detection, pip install, Desktop shortcut); `postbox.zip` built (39 files, 0.11 MB) and added to dbox-releases; `install_mailman_stub.ps1` / `.sh` stub scripts in dbox-releases; thin wrapper `.bat` / `.command` install files added to dbox-website; `mailman.html` product page created (hero, 12 features, how-it-works, pricing, 7 FAQ, download); `icon_mailman.svg` + `mailman_banner.svg` added; Mailman added to nav dropdown + products-strip in `index.html` and `investments.html`
+
+### Roadmap (updated 2026-07-20)
+1. ✅ Print view
+2. ✅ FTS5 search index
+3. ✅ Packaging / website
+4. **Offline mode** — service worker + outbox queue for compose-while-disconnected
+5. **Microsoft OAuth testing** — blocked on Azure credit card requirement
+
+---
+
 ## Current state (2026-07-14)
 
 ### Session 2026-07-14 (7) — keyboard shortcuts, tab unread badge

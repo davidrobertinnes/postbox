@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **feat: print view** — "Print" button in single-message and thread footers; `_emPrint(msg)` builds a clean standalone HTML window (From/To/CC/Date/Subject header, full HTML or plain-text body) and auto-fires `window.print()`; dual-trigger guard prevents double-print on load event + 600ms timeout. (`web/static/js/emails.js`)
+- **feat: FTS5 full-text search** — `messages_fts` virtual table (subject, from_addr, from_name, body) with `unicode61 remove_diacritics 1` tokeniser; 4 triggers keep it in sync on message INSERT/DELETE and body fetch INSERT/UPDATE; backfill migration runs once on first startup; freetext LIKE scan replaced with `FTS5 MATCH word*` prefix queries via `_fts_query()` helper; searches full body text (not just snippets) — finds more results and runs instantly. (`core/database.py`, `web/routes/emails.py`)
+- **feat: packaging** — `wininstall.bat` and `macinstall.sh` installer scripts (Python detection + auto-download, pip install of all dependencies, Desktop shortcut/launcher creation); `postbox.zip` release bundle (39 files, 0.11 MB) added to dbox-releases; `install_mailman_stub.ps1` / `.sh` one-liner stubs added to dbox-releases; thin wrapper `install_mailman.bat` / `.command` files added to dbox-website; `mailman.html` product page created (hero, 12 feature cards, how-it-works steps, pricing, 7 FAQ items, download section); `icon_mailman.svg` + `mailman_banner.svg` created; Mailman added to nav dropdown + products-strip in `index.html` and `investments.html`. (`postbox`, `dbox-releases`, `dbox-website`)
+
 - **dbox integration: unread badge** — dbox sidebar now shows a red unread-count badge sourced from `GET /api/ext/unread_count`; polls on load and every 2 minutes; badge hidden when count is zero or Mailman offline. No postbox code changed — work was entirely on the dbox side. (dbox: `web/templates/dashboard.html`, `web/routes/contacts.py`, `web/static/dbox.css`)
 
 - core/database.py: migration adds `priority INTEGER DEFAULT 0` column to rules table

@@ -217,10 +217,14 @@ def sync_inbox(account_id: int, db_path: str, max_msgs: int = 200) -> int:
             client.logout()
             return 0
 
-        if max_uid > 0:
-            # Incremental: only UIDs after our last sync point
+        uidnext = int(status_info.get(b"UIDNEXT") or 0)
+
+        if max_uid > 0 and uidnext and max_uid >= uidnext - 1:
+            new_uids = []
+        elif max_uid > 0:
             try:
-                new_uids = client.search(["UID", f"{max_uid + 1}:*"])
+                candidates = client.search(["UID", f"{max_uid + 1}:*"])
+                new_uids   = [u for u in candidates if u > max_uid]
             except Exception:
                 uids     = client.search("ALL")
                 new_uids = [u for u in uids if u not in existing][-max_msgs:]
@@ -327,17 +331,24 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
 
                 new_uid_validities[folder_id] = server_uv
 
+                uidnext  = int(status_info.get(b"UIDNEXT") or 0)
+
                 if uv_changed:
                     # Server reset UIDs — clear our stale data and re-fetch
                     folders_to_clear.append(folder_id)
                     uids     = client.search("ALL")
                     new_uids = uids[-max_msgs:]
+                elif max_uid > 0 and uidnext and max_uid >= uidnext - 1:
+                    # UIDNEXT confirms nothing new — skip search entirely
+                    new_uids = []
                 elif max_uid > 0:
-                    # Incremental: ask server for UIDs we haven't seen yet
+                    # Incremental: ask server for UIDs after our last sync point.
+                    # Guard against RFC 3501 range reversal (when max_uid > server's
+                    # highest UID, X:* inverts to server_max:X and returns old UIDs).
                     try:
-                        new_uids = client.search(["UID", f"{max_uid + 1}:*"])
+                        candidates = client.search(["UID", f"{max_uid + 1}:*"])
+                        new_uids   = [u for u in candidates if u > max_uid]
                     except Exception:
-                        # Server doesn't support UID range — fall back to SEARCH ALL
                         uids     = client.search("ALL")
                         new_uids = [u for u in uids if u > max_uid][-max_msgs:]
                 else:

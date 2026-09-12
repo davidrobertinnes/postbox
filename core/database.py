@@ -137,6 +137,32 @@ def initialise_database(db_path: str) -> None:
     c.execute("CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_folders_role ON folders(role)")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        to_addrs TEXT NOT NULL,
+        cc_addrs TEXT,
+        bcc_addrs TEXT,
+        subject TEXT,
+        body_text TEXT,
+        reply_to_msg_id TEXT,
+        references_hdr TEXT,
+        request_receipt INTEGER DEFAULT 0,
+        draft_id INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        last_attempt TEXT,
+        attempts INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        error TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS outbox_attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        outbox_id INTEGER NOT NULL REFERENCES outbox(id) ON DELETE CASCADE,
+        filename TEXT,
+        content_type TEXT,
+        data BLOB
+    )""")
+
     # FTS5 full-text search
     try:
         c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(

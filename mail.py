@@ -175,6 +175,10 @@ if __name__ == "__main__":
         target=start_all, args=(db_path,), daemon=True
     ).start()
 
+    # Start outbox retry loop (retries queued messages every 60 s)
+    from core.outbox import start_outbox_retry
+    start_outbox_retry(db_path)
+
     # Purge trash messages older than 30 days (by email date)
     def _purge_old_trash():
         from core.imap_actions import purge_old_trash

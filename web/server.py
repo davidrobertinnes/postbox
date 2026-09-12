@@ -36,6 +36,7 @@ from web.routes.oauth        import bp as oauth_bp
 from web.routes.rules        import bp as rules_bp
 from web.routes.import_mail  import bp as import_bp
 from web.routes.contacts     import bp as contacts_bp
+from web.routes.outbox       import bp as outbox_bp
 
 app.register_blueprint(accounts_bp)
 app.register_blueprint(emails_bp)
@@ -45,6 +46,7 @@ app.register_blueprint(oauth_bp)
 app.register_blueprint(rules_bp)
 app.register_blueprint(import_bp)
 app.register_blueprint(contacts_bp)
+app.register_blueprint(outbox_bp)
 
 
 # ── Shell route ─────────────────────────────────────────────────────────────────

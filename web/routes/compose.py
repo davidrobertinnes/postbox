@@ -54,6 +54,7 @@ def api_send():
         for f in files if f and f.filename
     ]
 
+    request_receipt = data.get("request_receipt") in ("1", "true", True)
     ok_sent, msg = send_message(
         account=dict(row),
         to=to,
@@ -64,7 +65,7 @@ def api_send():
         reply_to_msg_id=data.get("reply_to_msg_id") or None,
         references=data.get("references") or None,
         attachments=attachments or None,
-        request_receipt=data.get("request_receipt") in ("1", "true", True),
+        request_receipt=request_receipt,
     )
     if ok_sent:
         draft_id = data.get("draft_id")
@@ -77,6 +78,27 @@ def api_send():
             except Exception:
                 pass
         return ok({"message": msg})
+
+    # Queue for retry if it looks like a network failure
+    from core.outbox import is_network_error, queue_message
+    if is_network_error(msg):
+        draft_id = data.get("draft_id")
+        queue_message(
+            db_path=db(),
+            account_id=int(account_id),
+            to=to,
+            subject=subject,
+            body=body,
+            cc=data.get("cc") or None,
+            bcc=data.get("bcc") or None,
+            reply_to_msg_id=data.get("reply_to_msg_id") or None,
+            references_hdr=data.get("references") or None,
+            request_receipt=request_receipt,
+            draft_id=int(draft_id) if draft_id else None,
+            attachments=attachments or None,
+        )
+        return ok({"queued": True})
+
     return err(msg)
 
 

@@ -1033,3 +1033,25 @@ html, body {
 .cmp-ac-name        { font-size: 13px; font-weight: 500; color: var(--ink); }
 .cmp-ac-company     { font-weight: 400; color: var(--ink3); }
 .cmp-ac-email       { font-size: 12px; color: var(--ink3); margin-left: auto; white-space: nowrap; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   OUTBOX
+══════════════════════════════════════════════════════════════════════ */
+.obx-table          { width: 100%; }
+.obx-table th       { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ink3); padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.obx-table td       { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+.obx-table tr:last-child td { border-bottom: none; }
+.obx-to             { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); }
+.obx-subj           { color: var(--ink); font-weight: 500; }
+.obx-date           { white-space: nowrap; color: var(--ink3); font-size: 12px; }
+.obx-attempts       { text-align: center; color: var(--ink3); font-size: 12px; }
+.obx-actions        { white-space: nowrap; }
+.obx-actions .btn   { margin-left: 6px; }
+.obx-del-btn        { color: var(--red) !important; border-color: var(--red) !important; }
+.obx-del-btn:hover  { background: color-mix(in srgb, var(--red) 10%, transparent) !important; }
+.obx-status         { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; white-space: nowrap; }
+.obx-status-pending { background: color-mix(in srgb, var(--amber, #F59E0B) 15%, transparent); color: var(--amber, #F59E0B); }
+.obx-status-failed  { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
+.obx-err-row td     { padding: 0 12px 10px; border-bottom: 1px solid var(--border); }
+.obx-err-row:last-child td { border-bottom: none; }
+.obx-error          { font-size: 12px; color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); border-radius: 4px; padding: 6px 10px; }

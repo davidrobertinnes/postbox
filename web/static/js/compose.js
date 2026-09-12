@@ -363,7 +363,12 @@ async function _cmpSend() {
     const r = await fetch('/api/send', { method: 'POST', body: fd });
     const j = await r.json();
     if (j.ok) {
-      toast('Message sent');
+      if (j.data && j.data.queued) {
+        toast('No connection — message queued');
+        if (typeof _updateOutboxBadge === 'function') _updateOutboxBadge();
+      } else {
+        toast('Message sent');
+      }
       _cmpClose();
     } else {
       toast(j.error || 'Send failed', 'err');

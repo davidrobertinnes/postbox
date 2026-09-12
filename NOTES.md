@@ -2,6 +2,10 @@
 
 ## Current state (2026-09-13)
 
+### Session 2026-09-13 (2) — incremental IMAP sync
+
+- **UID-range incremental sync** — `sync_all_folders_messages` and `sync_inbox` now use `SEARCH UID {max_uid+1}:*` for folders that have existing data rather than `SEARCH ALL`; on startup when no new mail exists, no UIDs are transferred at all; only the first sync per folder uses `SEARCH ALL` (to get the initial batch); `UIDVALIDITY` is now stored per folder and checked on each sync — if the server resets it (rare, but happens with Exchange), the folder is wiped and re-fetched; `total_exists` from `SELECT_FOLDER` response replaces the second `SEARCH ALL` that was used for message count (`core/imap_sync.py`)
+
 ### Session 2026-09-13 — outbox queue (offline send)
 
 - **Outbox queue** — messages that fail to send due to network errors are now queued rather than lost; `core/outbox.py` implements `queue_message()`, `retry_outbox()`, `get_outbox_items()`, and a `start_outbox_retry()` background loop (retries every 60 s); `outbox` + `outbox_attachments` tables added to schema (`core/database.py`); `is_network_error()` classifies SMTP failures by error string; `/api/send` queues on network error and returns `{queued:true}` instead of error (`web/routes/compose.py`); outbox blueprint + routes (`web/routes/outbox.py`): GET /api/outbox, GET /api/outbox/count, POST /api/outbox/<id>/retry, DELETE /api/outbox/<id>; retry fires SMTP and deletes row on success (max 10 attempts before marking failed); Outbox page (`web/static/js/outbox.js`): table with status badges, per-row Retry/Delete, "Retry All" toolbar button; outbox nav badge in sidebar polls every 60 s; compose.js shows "No connection — message queued" toast instead of error; CSS for `.obx-*` classes added to `postbox.css`

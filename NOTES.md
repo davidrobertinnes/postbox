@@ -4,6 +4,7 @@
 
 ### Session 2026-09-13 (2) — incremental IMAP sync
 
+- **STATUS-based sync fast path** — `STATUS (MESSAGES UNSEEN UIDNEXT)` called before SELECT; folders with no new messages skip SELECT and SEARCH entirely; timing: Internode 4.3s→1.3s, Gmail 23s→13s (`core/imap_sync.py`)
 - **UID-range incremental sync** — `sync_all_folders_messages` and `sync_inbox` now use `SEARCH UID {max_uid+1}:*` for folders that have existing data rather than `SEARCH ALL`; on startup when no new mail exists, no UIDs are transferred at all; only the first sync per folder uses `SEARCH ALL` (to get the initial batch); `UIDVALIDITY` is now stored per folder and checked on each sync — if the server resets it (rare, but happens with Exchange), the folder is wiped and re-fetched; `total_exists` from `SELECT_FOLDER` response replaces the second `SEARCH ALL` that was used for message count (`core/imap_sync.py`)
 
 ### Session 2026-09-13 — outbox queue (offline send)

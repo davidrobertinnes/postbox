@@ -295,6 +295,7 @@ function navigate(key) {
   _setNavActive(key);
   const titles = {inbox:'Inbox',sent:'Sent',drafts:'Drafts',trash:'Trash',junk:'Junk',all:'All Mail',starred:'Starred',accounts:'Accounts',filters:'Filters',outbox:'Outbox',contacts:'Contacts'};
   document.getElementById('page-title').textContent = titles[key] || key;
+  document.getElementById('module-content').style.cssText = '';
   detClose();
   if (key === 'accounts') { pageAccounts();      return; }
   if (key === 'filters')  { pageFilters();       return; }
@@ -309,6 +310,7 @@ function navigateFolder(folderId, folderName) {
   _currentModule = key;
   _setNavActive(key);
   document.getElementById('page-title').textContent = folderName;
+  document.getElementById('module-content').style.cssText = '';
   detClose();
   pageEmailsFolder(folderId, folderName);
 }
@@ -319,6 +321,7 @@ function navigateAccountFolder(accountId, accountName, role) {
   _setNavActive(key);
   const titles = { inbox:'Inbox', sent:'Sent', drafts:'Drafts', trash:'Trash', spam:'Junk' };
   document.getElementById('page-title').textContent = `${accountName} — ${titles[role] || role}`;
+  document.getElementById('module-content').style.cssText = '';
   detClose();
   pageEmails(role, titles[role] || role, accountId);
 }

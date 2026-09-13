@@ -29,6 +29,34 @@ function _emSelectMsg(id) {
   if (row) { row.classList.add('em-selected'); row.scrollIntoView({ block: 'nearest' }); }
 }
 
+function _emCloseView() {
+  const pane = document.getElementById('em-reading-pane');
+  if (pane) {
+    _emOpenMsg = null;
+    const empty = document.getElementById('em-pane-empty');
+    const subjEl = document.getElementById('em-pane-subj');
+    const bodyEl = document.getElementById('em-pane-body');
+    const footEl = document.getElementById('em-pane-foot');
+    if (empty)  empty.style.display  = '';
+    if (subjEl) subjEl.style.display = 'none';
+    if (bodyEl) bodyEl.style.display = 'none';
+    if (footEl) footEl.style.display = 'none';
+  } else {
+    detClose();
+  }
+}
+
+function _emShowPane(subjText) {
+  const empty = document.getElementById('em-pane-empty');
+  const subjEl = document.getElementById('em-pane-subj');
+  const bodyEl = document.getElementById('em-pane-body');
+  const footEl = document.getElementById('em-pane-foot');
+  if (empty)  empty.style.display  = 'none';
+  if (subjEl) { subjEl.style.display = ''; document.getElementById('em-pane-subj-text').textContent = subjText || ''; }
+  if (bodyEl) { bodyEl.style.display = ''; bodyEl.innerHTML = '<div class="state-loading">Loading...</div>'; }
+  if (footEl) { footEl.style.display = ''; footEl.innerHTML = ''; }
+}
+
 function _emSetTitleBadge() {
   apiFetch('/api/emails/unread_count').then(r => {
     const n = r.unread || 0;
@@ -43,7 +71,8 @@ function _emKeyHandler(e) {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   if (document.querySelector('.modal-bd')) return;
 
-  const panelOpen = document.querySelector('.det-panel')?.classList.contains('open');
+  const inPane  = !!document.getElementById('em-reading-pane');
+  const panelOpen = inPane ? !!_emOpenMsg : document.querySelector('.det-panel')?.classList.contains('open');
   if (!panelOpen) _emOpenMsg = null;
 
   switch (e.key) {
@@ -55,7 +84,7 @@ function _emKeyHandler(e) {
       const next = _emMessages[idx + 1];
       if (!next) break;
       _emSelectMsg(next.id);
-      if (panelOpen) emOpen(next.id, next.thread_id);
+      if (panelOpen || inPane) emOpen(next.id, next.thread_id);
       break;
     }
     case 'k':
@@ -66,7 +95,7 @@ function _emKeyHandler(e) {
       const prev = _emMessages[Math.max(0, idx - 1)];
       if (!prev || prev.id === cur) break;
       _emSelectMsg(prev.id);
-      if (panelOpen) emOpen(prev.id, prev.thread_id);
+      if (panelOpen || inPane) emOpen(prev.id, prev.thread_id);
       break;
     }
     case 'Enter': {
@@ -101,7 +130,7 @@ function _emKeyHandler(e) {
       document.getElementById('em-q')?.focus();
       break;
     case 'Escape':
-      if (panelOpen) { detClose(); _emOpenMsg = null; }
+      if (panelOpen) _emCloseView();
       break;
   }
 }
@@ -136,6 +165,7 @@ async function pageEmails(folder, folderName, accountId = null) {
   document.removeEventListener('keydown', _emKeyHandler);
   document.addEventListener('keydown', _emKeyHandler);
   const mc = document.getElementById('module-content');
+  mc.style.cssText = 'padding:0;overflow:hidden;';
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
     _emAccounts = await apiFetch('/api/accounts');
@@ -166,6 +196,7 @@ async function pageEmailsStarred() {
   document.removeEventListener('keydown', _emKeyHandler);
   document.addEventListener('keydown', _emKeyHandler);
   const mc = document.getElementById('module-content');
+  mc.style.cssText = 'padding:0;overflow:hidden;';
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
     _emAccounts = await apiFetch('/api/accounts');
@@ -192,6 +223,7 @@ async function pageEmailsFolder(folderId, folderDisplayName) {
   document.addEventListener('keydown', _emKeyHandler);
   document.getElementById('page-title').textContent = _emFolderName;
   const mc = document.getElementById('module-content');
+  mc.style.cssText = 'padding:0;overflow:hidden;';
   mc.innerHTML = '<div class="state-loading">Loading...</div>';
   try {
     _emAccounts = await apiFetch('/api/accounts');
@@ -222,7 +254,7 @@ async function _emLoad(append = false) {
   _emTotal = data.total || 0;
   _emApplySort();
   if (!append && !_emSelectedId && _emMessages.length) _emSelectedId = _emMessages[0].id;
-  _emRender();
+  _emRender(append);
   if (!append && _emFolder === 'inbox' && !_emPriorityFilter) _emAutoTriage();
   if (!append && _emFolder === 'inbox') _emSetTitleBadge();
 }
@@ -314,58 +346,94 @@ function _emTh(col, label, extraStyle) {
 let _emSearchTimer      = null;
 let _emAutoRefreshTimer = null;
 
+function _emRenderListOnly() {
+  const listCol = document.querySelector('.em-list-col');
+  if (!listCol) return;
+  const scrollTop = listCol.querySelector('.tbl-overflow-x')?.scrollTop || 0;
+  const msgs = _emMessages;
+  const tbody = listCol.querySelector('.em-list-table tbody');
+  if (tbody) {
+    tbody.innerHTML = msgs.length
+      ? msgs.map(_emRow).join('')
+      : `<tr><td colspan="6" class="em-empty">No messages in this folder</td></tr>`;
+  }
+  const footer = listCol.querySelector('.em-list-footer');
+  if (footer) {
+    footer.innerHTML = `<span class="count-pill">${msgs.length} of ${_emTotal} message${_emTotal !== 1 ? 's' : ''}</span>
+      ${msgs.length < _emTotal ? `<button class="btn btn-outline btn-sm em-load-more" onclick="_emLoadMore()">Load more</button><button class="btn btn-outline btn-sm em-load-all" onclick="_emLoadAll()">Load all</button>` : ''}`;
+  }
+  if (scrollTop) { const tbl = listCol.querySelector('.tbl-overflow-x'); if (tbl) tbl.scrollTop = scrollTop; }
+}
+
 function _emRender(keepScroll) {
   const mc = document.getElementById('module-content');
+  mc.style.cssText = 'padding:0;overflow:hidden;';
+
+  // In split mode with keepScroll, only rebuild the list column to preserve the pane
+  if (keepScroll && document.getElementById('em-reading-pane')) {
+    _emRenderListOnly();
+    return;
+  }
+
   const msgs = _emMessages;
-  const scrollTop = keepScroll ? (mc.querySelector('.em-list-panel')?.parentElement?.scrollTop || 0) : 0;
   const searchWasFocused = document.activeElement?.id === 'em-q';
 
   mc.innerHTML = `
-    <div class="em-toolbar">
-      <input class="em-search" id="em-q" placeholder="Search messages..." value="${esc(_emSearch)}">
-      ${_emAccounts.length > 1 ? `
-      <div class="em-filter-pills">
-        <button class="em-pill${_emAccountId === null ? ' active' : ''}" onclick="_emSetAccount(null)">All</button>
-        ${_emAccounts.map((a, i) => `<button class="em-pill${_emAccountId === a.id ? ' active' : ''}" onclick="_emSetAccount(${a.id})"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${_EM_COLOURS[i % _EM_COLOURS.length]};margin-right:5px;vertical-align:middle"></span>${esc(a.name)}</button>`).join('')}
-      </div>` : ''}
-      ${_emFolder === 'inbox' ? `
-      <div class="em-filter-pills">
-        <button class="em-pill${_emPriorityFilter === null ? ' active' : ''}" onclick="_emSetPriority(null)">All</button>
-        <button class="em-pill em-pill-urgent${_emPriorityFilter === 1 ? ' active' : ''}" onclick="_emSetPriority(1)">&#9873; Urgent</button>
+    <div class="em-split-wrap">
+      <div class="em-toolbar em-split-toolbar">
+        <input class="em-search" id="em-q" placeholder="Search messages..." value="${esc(_emSearch)}">
+        ${_emAccounts.length > 1 ? `
+        <div class="em-filter-pills">
+          <button class="em-pill${_emAccountId === null ? ' active' : ''}" onclick="_emSetAccount(null)">All</button>
+          ${_emAccounts.map((a, i) => `<button class="em-pill${_emAccountId === a.id ? ' active' : ''}" onclick="_emSetAccount(${a.id})"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${_EM_COLOURS[i % _EM_COLOURS.length]};margin-right:5px;vertical-align:middle"></span>${esc(a.name)}</button>`).join('')}
+        </div>` : ''}
+        ${_emFolder === 'inbox' ? `
+        <div class="em-filter-pills">
+          <button class="em-pill${_emPriorityFilter === null ? ' active' : ''}" onclick="_emSetPriority(null)">All</button>
+          <button class="em-pill em-pill-urgent${_emPriorityFilter === 1 ? ' active' : ''}" onclick="_emSetPriority(1)">&#9873; Urgent</button>
+        </div>
+        ${_emCategoryPills()}` : ''}
+        ${_emCategoryFilter && _emTotal > 0 ? `<button class="btn btn-outline btn-sm" onclick="_emBulkMove('${_emCategoryFilter}')">Move all ${_emTotal}&hellip;</button>` : ''}
+        ${(_emFolder === 'inbox' || _emFolderId) ? `<button class="btn btn-outline btn-sm" onclick="_emMarkAllRead()" title="Mark all as read">&#10003; All read</button>` : ''}
+        ${_emFolder === 'trash' ? `<button class="btn btn-outline btn-sm btn-danger" onclick="_emEmptyTrash()">&#128465; Empty Trash</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="_emPrefetch()" title="Download all message bodies for offline reading">&#8659; Offline</button>
+        <button class="btn btn-primary btn-sm" onclick="composeNew(${_emAccountId || 'null'})">&#9998; Compose</button>
       </div>
-      ${_emCategoryPills()}` : ''}
-      ${_emCategoryFilter && _emTotal > 0 ? `<button class="btn btn-outline btn-sm" onclick="_emBulkMove('${_emCategoryFilter}')">Move all ${_emTotal}&hellip;</button>` : ''}
-      ${(_emFolder === 'inbox' || _emFolderId) ? `<button class="btn btn-outline btn-sm" onclick="_emMarkAllRead()" title="Mark all as read">&#10003; All read</button>` : ''}
-      ${_emFolder === 'trash' ? `<button class="btn btn-outline btn-sm btn-danger" onclick="_emEmptyTrash()">&#128465; Empty Trash</button>` : ''}
-      <button class="btn btn-outline btn-sm" onclick="_emPrefetch()" title="Download all message bodies for offline reading">&#8659; Offline</button>
-      <button class="btn btn-primary btn-sm" onclick="composeNew(${_emAccountId || 'null'})">&#9998; Compose</button>
-    </div>
-    <div class="em-list-panel">
-      <div class="tbl-overflow-x">
-        <table class="em-list-table">
-          <thead><tr>
-            <th style="width:14px"></th>
-            ${_emTh('from_name','From')}
-            ${_emTh('subject','Subject')}
-            <th>Preview</th>
-            ${_emTh('date','Date','min-width:90px')}
-            <th style="width:22px"></th>
-            <th style="width:20px"></th>
-          </tr></thead>
-          <tbody>
-            ${msgs.length
-              ? msgs.map(_emRow).join('')
-              : `<tr><td colspan="7" class="em-empty">No messages in this folder</td></tr>`}
-          </tbody>
-        </table>
+      <div class="em-split-cols">
+        <div class="em-list-col">
+          <div class="tbl-overflow-x">
+            <table class="em-list-table">
+              <thead><tr>
+                <th style="width:14px"></th>
+                ${_emTh('from_name','From')}
+                ${_emTh('subject','Subject')}
+                ${_emTh('date','Date','min-width:90px')}
+                <th style="width:22px"></th>
+                <th style="width:20px"></th>
+              </tr></thead>
+              <tbody>
+                ${msgs.length
+                  ? msgs.map(_emRow).join('')
+                  : `<tr><td colspan="6" class="em-empty">No messages in this folder</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+          <div class="em-list-footer">
+            <span class="count-pill">${msgs.length} of ${_emTotal} message${_emTotal !== 1 ? 's' : ''}</span>
+            ${msgs.length < _emTotal ? `<button class="btn btn-outline btn-sm em-load-more" onclick="_emLoadMore()">Load more</button><button class="btn btn-outline btn-sm em-load-all" onclick="_emLoadAll()">Load all</button>` : ''}
+          </div>
+        </div>
+        <div class="em-reading-pane" id="em-reading-pane">
+          <div class="em-pane-empty" id="em-pane-empty">
+            <div class="em-pane-empty-icon">&#9993;</div>
+            <div>Select a message to read</div>
+          </div>
+          <div class="em-pane-subj" id="em-pane-subj" style="display:none"><span id="em-pane-subj-text"></span></div>
+          <div class="em-pane-body" id="em-pane-body" style="display:none"></div>
+          <div class="em-pane-foot" id="em-pane-foot" style="display:none"></div>
+        </div>
       </div>
-    </div>
-    <div class="mt-8">
-      <span class="count-pill">${msgs.length} of ${_emTotal} message${_emTotal !== 1 ? 's' : ''}</span>
-      ${msgs.length < _emTotal ? `<button class="btn btn-outline btn-sm em-load-more" style="margin-left:12px" onclick="_emLoadMore()">Load more</button><button class="btn btn-outline btn-sm em-load-all" style="margin-left:6px" onclick="_emLoadAll()">Load all</button>` : ''}
     </div>`;
-
-  if (scrollTop) mc.scrollTop = scrollTop;
 
   const q = document.getElementById('em-q');
   if (q) {
@@ -489,7 +557,6 @@ function _emRow(msg) {
     <td><span class="em-acct-dot" style="background:${colour}" title="${esc(msg.account_name||'')}"></span></td>
     <td class="em-from">${priority === 1 ? '<span class="em-urgent-flag" title="Urgent">&#9873;</span> ' : ''}${esc(displayFrom)}</td>
     <td class="em-subject">${esc(msg.subject || '(no subject)')}${categoryHtml}</td>
-    <td class="em-snippet">${esc(msg.snippet || '')}</td>
     <td class="em-date">${fmtDate(msg.date)}</td>
     <td>${msg.has_attachments ? '<span class="em-att-icon" title="Has attachments">&#128206;</span>' : ''}</td>
     <td class="em-star-cell" onclick="event.stopPropagation();_emToggleStar(${msg.id},this)">${isStarred ? '<span class="em-star starred" title="Unstar">&#9733;</span>' : '<span class="em-star" title="Star">&#9734;</span>'}</td>
@@ -520,7 +587,6 @@ async function _emToggleStar(msgId, cell) {
 }
 
 async function emOpen(msgId, threadId) {
-  // If it's a draft, open compose instead of detail panel
   const listMsg = _emMessages.find(m => m.id === msgId);
   if (listMsg && JSON.parse(listMsg.flags || '[]').includes('\\Draft')) {
     try {
@@ -530,6 +596,39 @@ async function emOpen(msgId, threadId) {
     return;
   }
 
+  const inPane = !!document.getElementById('em-reading-pane');
+
+  if (inPane) {
+    _emShowPane('');
+    try {
+      if (threadId) {
+        const threadMsgs = await apiFetch(`/api/threads/${encodeURIComponent(threadId)}`);
+        if (threadMsgs.length > 1) {
+          const selMsg = threadMsgs.find(m => m.id === msgId) || threadMsgs[threadMsgs.length - 1];
+          document.getElementById('em-pane-subj-text').textContent = selMsg.subject || '(no subject)';
+          await _emRenderThread(threadMsgs, msgId, threadId);
+          fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
+          document.querySelector(`tr[data-msgid="${msgId}"]`)?.classList.remove('unread');
+          return;
+        }
+      }
+      const msg = await apiFetch(`/api/emails/${msgId}`);
+      document.getElementById('em-pane-subj-text').textContent = msg.subject || '(no subject)';
+      _emRenderDetail(msg, threadId);
+      _emOpenMsg = msg;
+      if (threadId) _emLoadSummary(threadId);
+      if (threadId) _emLoadActions(threadId);
+      fetch(`/api/emails/${msgId}/mark_read`, { method: 'POST' }).catch(() => {});
+      document.querySelector(`tr[data-msgid="${msgId}"]`)?.classList.remove('unread');
+      if (_emFolder === 'inbox') _emSetTitleBadge();
+    } catch(e) {
+      const bodyEl = document.getElementById('em-pane-body');
+      if (bodyEl) bodyEl.innerHTML = `<div class="state-error">${esc(e.message)}</div>`;
+    }
+    return;
+  }
+
+  // Slide-over det-panel mode (fallback)
   detOpen('');
   try {
     if (threadId) {
@@ -543,7 +642,6 @@ async function emOpen(msgId, threadId) {
         return;
       }
     }
-    // Single message view
     const msg = await apiFetch(`/api/emails/${msgId}`);
     document.getElementById('det-title').textContent = msg.subject || '(no subject)';
     _emRenderDetail(msg, threadId);
@@ -575,7 +673,8 @@ function _emRenderDetail(msg, threadId) {
   const fromStr = msg.from_name ? `${msg.from_name} <${msg.from_addr}>` : msg.from_addr;
   const hasHtml = msg.body_html && msg.body_html.trim();
 
-  document.getElementById('det-body').innerHTML = `
+  const bodyEl = document.getElementById('em-pane-body') || document.getElementById('det-body');
+  bodyEl.innerHTML = `
     <div class="ai-summary-box" id="ai-summary-box" style="display:none">
       <div class="ai-summary-label">&#10022; AI Summary</div>
       <div id="ai-summary-text"></div>
@@ -624,7 +723,7 @@ function _emRenderDetail(msg, threadId) {
     }
   }
 
-  const foot = document.getElementById('det-foot');
+  const foot = document.getElementById('em-pane-foot') || document.getElementById('det-foot');
   foot.innerHTML = '';
 
   const replyBtn = document.createElement('button');
@@ -681,7 +780,7 @@ function _emRenderDetail(msg, threadId) {
           ? '<span class="em-star starred" title="Unstar">&#9733;</span>'
           : '<span class="em-star" title="Star">&#9734;</span>';
         if (_emStarredOnly && !r.data.starred) {
-          detClose();
+          _emCloseView();
           _emMessages = _emMessages.filter(m => m.id !== msg.id);
           _emTotal = Math.max(0, _emTotal - 1);
           _emRender(true);
@@ -709,7 +808,7 @@ function _emRenderDetail(msg, threadId) {
     unspamBtn.textContent = 'Not Spam';
     unspamBtn.onclick = async () => {
       const r = await fetch(`/api/emails/${msg.id}/unspam`, { method: 'POST' }).then(r => r.json());
-      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Moved to Inbox'); }
+      if (r.ok) { _emCloseView(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Moved to Inbox'); }
       else toast(r.error || 'Failed', 'err');
     };
     foot.appendChild(unspamBtn);
@@ -719,7 +818,7 @@ function _emRenderDetail(msg, threadId) {
     spamBtn.textContent = 'Spam';
     spamBtn.onclick = async () => {
       const r = await fetch(`/api/emails/${msg.id}/spam`, { method: 'POST' }).then(r => r.json());
-      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Marked as spam'); }
+      if (r.ok) { _emCloseView(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Marked as spam'); }
       else toast(r.error || 'Failed', 'err');
     };
     foot.appendChild(spamBtn);
@@ -790,7 +889,7 @@ async function _emMarkUnread(msgId) {
     await fetch(`/api/emails/${msgId}/mark_unread`, { method: 'POST' });
     const row = document.querySelector(`tr[data-msgid="${msgId}"]`);
     if (row) row.classList.add('unread');
-    detClose();
+    _emCloseView();
     toast('Marked as unread');
   } catch(e) { toast('Failed: ' + e.message, 'err'); }
 }
@@ -825,7 +924,7 @@ async function _emRestore(msgId) {
   try {
     const r = await fetch(`/api/emails/${msgId}/restore`, { method: 'POST' }).then(r => r.json());
     if (!r.ok) { toast(r.error || 'Restore failed', 'err'); return; }
-    detClose();
+    _emCloseView();
     _emMessages = _emMessages.filter(m => m.id !== msgId);
     _emTotal = Math.max(0, _emTotal - 1);
     _emRender(true);
@@ -841,8 +940,7 @@ async function _emTrash(msgId) {
   const msg     = idx >= 0 ? _emMessages[idx] : null;
   const inTrash = msg?.folder_role === 'trash' || _emFolder === 'trash';
 
-  detClose();
-  _emOpenMsg = null;
+  _emCloseView();
   if (idx >= 0) {
     _emMessages = _emMessages.filter(m => m.id !== msgId);
     _emTotal = Math.max(0, _emTotal - 1);
@@ -962,7 +1060,7 @@ async function _emMoveToFolder(msg, folderId, folderName, modalEl) {
       body: JSON.stringify({ folder_id: folderId }),
     }).then(r => r.json());
     if (!r.ok) { toast(r.error || 'Move failed', 'err'); return; }
-    detClose();
+    _emCloseView();
     _emMessages = _emMessages.filter(m => m.id !== msg.id);
     _emTotal = Math.max(0, _emTotal - 1);
     _emRender(true);
@@ -1066,7 +1164,7 @@ async function _emAiDraft(msg, threadId) {
 // ── Thread view ───────────────────────────────────────────────────────────────
 
 async function _emRenderThread(msgs, selectedId, threadId) {
-  const det = document.getElementById('det-body');
+  const det = document.getElementById('em-pane-body') || document.getElementById('det-body');
   det.innerHTML = `
     <div class="ai-summary-box" id="ai-summary-box" style="display:none">
       <div class="ai-summary-label">&#10022; AI Summary</div>
@@ -1164,7 +1262,7 @@ function _emRenderThreadBody(msg, container) {
 }
 
 function _emRenderThreadFoot(msg, threadId) {
-  const foot = document.getElementById('det-foot');
+  const foot = document.getElementById('em-pane-foot') || document.getElementById('det-foot');
   if (!foot) return;
   foot.innerHTML = '';
 
@@ -1190,7 +1288,7 @@ function _emRenderThreadFoot(msg, threadId) {
     if (r?.ok) {
       starBtn.textContent = r.data.starred ? '★ Unstar' : '☆ Star';
       if (_emStarredOnly && !r.data.starred) {
-        detClose();
+        _emCloseView();
         _emMessages = _emMessages.filter(m => m.id !== msg.id);
         _emTotal = Math.max(0, _emTotal - 1);
         _emRender(true);
@@ -1205,13 +1303,13 @@ function _emRenderThreadFoot(msg, threadId) {
   } else if (msg.folder_role === 'spam') {
     btn('Not Spam', false, async () => {
       const r = await fetch(`/api/emails/${msg.id}/unspam`, { method: 'POST' }).then(r => r.json());
-      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Moved to Inbox'); }
+      if (r.ok) { _emCloseView(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Moved to Inbox'); }
       else toast(r.error || 'Failed', 'err');
     });
   } else {
     btn('Spam', false, async () => {
       const r = await fetch(`/api/emails/${msg.id}/spam`, { method: 'POST' }).then(r => r.json());
-      if (r.ok) { detClose(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Marked as spam'); }
+      if (r.ok) { _emCloseView(); _emMessages = _emMessages.filter(m => m.id !== msg.id); _emTotal = Math.max(0, _emTotal - 1); _emRender(true); toast('Marked as spam'); }
       else toast(r.error || 'Failed', 'err');
     });
   }

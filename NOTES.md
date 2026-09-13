@@ -2,6 +2,10 @@
 
 ## Current state (2026-09-13)
 
+### Session 2026-09-13 (3) — reading pane
+
+- **Reading pane (Thunderbird/Outlook style)** — email list view now splits horizontally: 380px list column on left, reading pane fills remaining width; selecting a row populates the pane immediately without a slide-over; Preview/snippet column removed from list table (content now in the pane); pane shows subject header, scrollable body, pinned action buttons at bottom; empty state shown until a message is selected; `_emCloseView()` helper replaces all `detClose()` calls in email actions — handles both pane-reset and det-panel-close modes transparently; `_emShowPane()` sets up pane state before fetch; `_emRenderListOnly()` rebuilds only the list tbody+footer on `keepScroll=true` re-renders (sort, triage, mark-all-read) — pane is untouched; `emOpen()` detects pane vs. panel mode and routes accordingly; `_emRenderDetail()`, `_emRenderThread()`, `_emRenderThreadFoot()` auto-detect `em-pane-body`/`em-pane-foot` vs. `det-body`/`det-foot`; keyboard j/k now auto-advance in reading pane even without a prior open; Escape clears pane; navigate() resets `mc.style.cssText` so split layout is torn down on module change. (`web/static/js/emails.js`, `web/static/postbox.css`, `web/templates/dashboard.html`)
+
 ### Session 2026-09-13 (2) — incremental IMAP sync
 
 - **STATUS-based sync fast path** — `STATUS (MESSAGES UNSEEN UIDNEXT)` called before SELECT; folders with no new messages skip SELECT and SEARCH entirely; timing: Internode 4.3s→1.3s, Gmail 23s→13s (`core/imap_sync.py`)

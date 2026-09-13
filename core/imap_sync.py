@@ -320,31 +320,57 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
             folder_name = folder_row["name"]
             if folder_name.lower() in _GMAIL_SKIP_FOLDERS:
                 continue
+
+            state     = folder_state.get(folder_id, {"max_uid": 0, "uid_validity": None})
+            max_uid   = state["max_uid"]
+            stored_uv = state["uid_validity"]
+
             try:
-                status_info       = client.select_folder(folder_name, readonly=True)
-                total_exists      = status_info.get(b"EXISTS", 0)
-                server_uv         = status_info.get(b"UIDVALIDITY")
-                state             = folder_state.get(folder_id, {"max_uid": 0, "uid_validity": None})
-                max_uid           = state["max_uid"]
-                stored_uv         = state["uid_validity"]
-                uv_changed        = stored_uv and server_uv and int(stored_uv) != int(server_uv)
+                # Lightweight STATUS: get counts + UIDNEXT without selecting the folder.
+                # If UIDNEXT hasn't advanced past our highest stored UID we skip SELECT
+                # and SEARCH entirely — just update sidebar counts from STATUS.
+                st           = client.folder_status(folder_name, ["MESSAGES", "UNSEEN", "UIDNEXT"])
+                total_exists = int(st.get(b"MESSAGES") or 0)
+                unseen_count = int(st.get(b"UNSEEN")   or 0)
+                srv_uidnext  = int(st.get(b"UIDNEXT")  or 0)
+
+                folder_counts[folder_id] = (total_exists, unseen_count)
+
+                if not total_exists:
+                    continue
+
+                if max_uid > 0 and srv_uidnext and srv_uidnext <= max_uid + 1:
+                    # Already caught up — no SELECT or SEARCH needed
+                    new_uid_validities[folder_id] = stored_uv
+                    continue
+
+                # STATUS indicates new messages (or first sync) — fall through to SELECT
+                srv_uidnext_hint = srv_uidnext
+
+            except Exception:
+                # STATUS unsupported or failed — fall through to SELECT path
+                srv_uidnext_hint = 0
+
+            try:
+                # SELECT needed: either first sync, new messages, or STATUS failed
+                sel       = client.select_folder(folder_name, readonly=True)
+                server_uv = sel.get(b"UIDVALIDITY")
+                uidnext   = int(sel.get(b"UIDNEXT") or srv_uidnext_hint or 0)
 
                 new_uid_validities[folder_id] = server_uv
-
-                uidnext  = int(status_info.get(b"UIDNEXT") or 0)
+                uv_changed = stored_uv and server_uv and int(stored_uv) != int(server_uv)
 
                 if uv_changed:
-                    # Server reset UIDs — clear our stale data and re-fetch
+                    # Server reset UIDs — wipe stale data and re-fetch
                     folders_to_clear.append(folder_id)
                     uids     = client.search("ALL")
                     new_uids = uids[-max_msgs:]
                 elif max_uid > 0 and uidnext and max_uid >= uidnext - 1:
-                    # UIDNEXT confirms nothing new — skip search entirely
                     new_uids = []
                 elif max_uid > 0:
-                    # Incremental: ask server for UIDs after our last sync point.
-                    # Guard against RFC 3501 range reversal (when max_uid > server's
-                    # highest UID, X:* inverts to server_max:X and returns old UIDs).
+                    # Incremental: UIDs after our last sync point.
+                    # Guard against RFC 3501 range reversal: if max_uid > server's
+                    # current highest UID, X:* inverts and returns old UIDs.
                     try:
                         candidates = client.search(["UID", f"{max_uid + 1}:*"])
                         new_uids   = [u for u in candidates if u > max_uid]
@@ -352,13 +378,9 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
                         uids     = client.search("ALL")
                         new_uids = [u for u in uids if u > max_uid][-max_msgs:]
                 else:
-                    # First sync for this folder — fetch the most recent max_msgs
+                    # First sync — fetch the most recent max_msgs
                     uids     = client.search("ALL")
                     new_uids = uids[-max_msgs:]
-
-                if not total_exists:
-                    folder_counts[folder_id] = (0, 0)
-                    continue
 
                 if new_uids:
                     fetch_data = client.fetch(new_uids, ["ENVELOPE", "FLAGS", "RFC822.SIZE", "BODYSTRUCTURE"])
@@ -366,11 +388,13 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
                         results.append((folder_id, uid, data))
                         total_new += 1
 
-                try:
-                    unseen = client.search("UNSEEN")
-                    folder_counts[folder_id] = (total_exists, len(unseen))
-                except Exception:
-                    folder_counts[folder_id] = (total_exists, None)
+                # Refresh counts from SELECT if STATUS didn't run
+                if folder_id not in folder_counts:
+                    try:
+                        unseen = client.search("UNSEEN")
+                        folder_counts[folder_id] = (int(sel.get(b"EXISTS") or 0), len(unseen))
+                    except Exception:
+                        folder_counts[folder_id] = (int(sel.get(b"EXISTS") or 0), None)
 
             except Exception as e:
                 log.debug("sync folder '%s' account=%d: %s", folder_name, account_id, e)

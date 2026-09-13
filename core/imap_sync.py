@@ -296,8 +296,11 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
             (account_id, f["id"])
         ).fetchone()
         folder_state[f["id"]] = {
-            "max_uid":      max_uid_row[0] or 0,
-            "uid_validity": f.get("uid_validity"),
+            "max_uid":       max_uid_row[0] or 0,
+            "uid_validity":  f.get("uid_validity"),
+            "uid_next":      f.get("uid_next") or 0,      # UIDNEXT stored from last sync
+            "message_count": f.get("message_count") or 0,
+            "unread_count":  f.get("unread_count")  or 0,
         }
     conn.close()
 
@@ -311,6 +314,7 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
     results            = []   # (folder_id, uid, imap_data)
     folder_counts      = {}   # folder_id -> (message_count, unread_count or None)
     new_uid_validities = {}   # folder_id -> server UIDVALIDITY value
+    new_uid_nexts      = {}   # folder_id -> UIDNEXT to persist for next sync
     folders_to_clear   = []   # folder_ids whose UIDVALIDITY changed (must wipe and re-sync)
     total_new          = 0
     try:
@@ -321,9 +325,18 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
             if folder_name.lower() in _GMAIL_SKIP_FOLDERS:
                 continue
 
-            state     = folder_state.get(folder_id, {"max_uid": 0, "uid_validity": None})
-            max_uid   = state["max_uid"]
-            stored_uv = state["uid_validity"]
+            state          = folder_state.get(folder_id, {"max_uid": 0, "uid_validity": None, "uid_next": 0})
+            max_uid        = state["max_uid"]
+            stored_uv      = state["uid_validity"]
+            stored_uidnext = state["uid_next"]
+
+            # Pre-STATUS fast path: if we stored UIDNEXT last sync and our max_uid is
+            # still current, skip the network round trip entirely and use cached counts.
+            # Inbox unread counts stay fresh via the IDLE thread; non-inbox badge
+            # staleness (up to 10 min) is acceptable.
+            if stored_uidnext > 0 and max_uid + 1 >= stored_uidnext:
+                folder_counts[folder_id] = (state["message_count"], state["unread_count"])
+                continue
 
             try:
                 # Lightweight STATUS: get counts + UIDNEXT without selecting the folder.
@@ -335,6 +348,7 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
                 srv_uidnext  = int(st.get(b"UIDNEXT")  or 0)
 
                 folder_counts[folder_id] = (total_exists, unseen_count)
+                new_uid_nexts[folder_id] = srv_uidnext
 
                 if not total_exists:
                     continue
@@ -358,6 +372,7 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
                 uidnext   = int(sel.get(b"UIDNEXT") or srv_uidnext_hint or 0)
 
                 new_uid_validities[folder_id] = server_uv
+                new_uid_nexts[folder_id]      = uidnext
                 uv_changed = stored_uv and server_uv and int(stored_uv) != int(server_uv)
 
                 if uv_changed:
@@ -443,6 +458,13 @@ def sync_all_folders_messages(account_id: int, db_path: str, max_msgs: int = 100
                 conn.execute(
                     "UPDATE folders SET uid_validity=? WHERE id=?",
                     (int(uv), folder_id)
+                )
+
+        for folder_id, un in new_uid_nexts.items():
+            if un:
+                conn.execute(
+                    "UPDATE folders SET uid_next=? WHERE id=?",
+                    (int(un), folder_id)
                 )
 
         conn.execute(

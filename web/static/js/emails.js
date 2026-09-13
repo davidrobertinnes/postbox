@@ -337,10 +337,46 @@ function emSort(col) {
   _emRender(true);
 }
 
-function _emTh(col, label, extraStyle) {
+function _emTh(col, label, extraStyle, colKey) {
   const active = _emSort.col === col;
   const arrow  = active ? (_emSort.dir === 1 ? ' ▲' : ' ▼') : '';
-  return `<th onclick="emSort('${col}')" style="cursor:pointer;user-select:none${extraStyle ? ';' + extraStyle : ''}" class="${active ? 'sort-active' : ''}">${label}${arrow}</th>`;
+  const colAttr = colKey ? ` data-col="${colKey}"` : '';
+  return `<th onclick="emSort('${col}')" style="cursor:pointer;user-select:none${extraStyle ? ';' + extraStyle : ''}" class="${active ? 'sort-active' : ''}"${colAttr}>${label}${arrow}</th>`;
+}
+
+function _emInitColResize() {
+  const table = document.querySelector('.em-list-col .em-list-table');
+  if (!table) return;
+  const ths = [...table.querySelectorAll('thead th[data-col]')];
+
+  // Apply any saved widths before attaching handles
+  const saved = JSON.parse(localStorage.getItem('em_col_widths') || 'null');
+  if (saved) ths.forEach(th => { if (saved[th.dataset.col]) th.style.width = saved[th.dataset.col] + 'px'; });
+
+  ths.forEach(th => {
+    th.querySelector('.em-col-handle')?.remove();
+    const handle = document.createElement('div');
+    handle.className = 'em-col-handle';
+    th.appendChild(handle);
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = th.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      const onMove = ev => { th.style.width = Math.max(40, startW + ev.clientX - startX) + 'px'; };
+      const onUp = () => {
+        document.body.style.cursor = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        const widths = {};
+        ths.forEach(t => { widths[t.dataset.col] = t.offsetWidth; });
+        localStorage.setItem('em_col_widths', JSON.stringify(widths));
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
 }
 
 let _emSearchTimer      = null;
@@ -405,9 +441,9 @@ function _emRender(keepScroll) {
             <table class="em-list-table">
               <thead><tr>
                 <th style="width:14px"></th>
-                ${_emTh('from_name','From')}
-                ${_emTh('subject','Subject')}
-                ${_emTh('date','Date','min-width:90px')}
+                ${_emTh('from_name','From','width:110px','from')}
+                ${_emTh('subject','Subject','','subj')}
+                ${_emTh('date','Date','width:82px','date')}
                 <th style="width:22px"></th>
                 <th style="width:20px"></th>
               </tr></thead>
@@ -448,6 +484,7 @@ function _emRender(keepScroll) {
     });
     if (searchWasFocused) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
   }
+  _emInitColResize();
 }
 
 const _EM_CATEGORIES = {

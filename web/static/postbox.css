@@ -1154,3 +1154,25 @@ html, body {
 .em-split-toolbar {
   margin-bottom: 10px;
 }
+
+/* Resizable columns in list pane */
+.em-list-col .em-list-table { table-layout: fixed; }
+.em-list-col th[data-col]   { position: relative; overflow: visible; }
+.em-col-handle {
+  position: absolute;
+  right: -3px; top: 0; bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+  border-radius: 3px;
+}
+.em-col-handle:hover { background: var(--accent-dim); }
+/* Clip cell text in fixed-layout table */
+.em-list-col td.em-from,
+.em-list-col td.em-subject,
+.em-list-col td.em-date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
+}
